@@ -153,8 +153,12 @@ def run_client(port, tls_encryption, hostname, northeastern_username):
                 guesses = server_message.get('guesses', [])
                 filtered_list = filter_word_list(word_list, guesses)
                 
-                # Choose the next guess from the filtered list
-                next_guess = filtered_list[0] if filtered_list else random.choice(word_list)
+                # choose next guess from filtered list
+                if filtered_list is not None:
+                    next_guess = filtered_list[0]
+                # if filtered list empty
+                else:
+                    next_guess = random.choice(word_list)
                 guessed_words.append(next_guess)
                 
                 # 'guess' send to server
