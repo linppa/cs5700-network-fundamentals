@@ -47,7 +47,7 @@ def parse_commands():
         if arguments.port == 27993:
             arguments.port = 27994
             
-    print(f"{arguments}")
+    # print(f"{arguments}")
     return arguments
     
     
@@ -154,7 +154,7 @@ def run_client(port, tls_encryption, hostname, northeastern_username):
                 filtered_list = filter_word_list(word_list, guesses)
                 
                 # choose next guess from filtered list
-                if filtered_list is not None:
+                if filtered_list:
                     next_guess = filtered_list[0]
                 # if filtered list empty
                 else:
