@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 
 '''
-https://docs.python.org/3/library/socket.html
-https://docs.python.org/3/library/argparse.html#the-parse-args-method
-https://www.datacamp.com/tutorial/a-complete-guide-to-socket-programming-in-python
-https://www.geeksforgeeks.org/open-a-file-in-python/#
-https://docs.python.org/3/library/ssl.html
-https://docs.python.org/3/library/json.html
-https://www.geeksforgeeks.org/enumerate-in-python/
+Linda Quach
+Spring 2024
+CS5700 Network Fundamentals
+Project 1: Socket Basics
 '''
 
 import socket
@@ -16,20 +13,34 @@ import ssl
 import json
 import random
 
-
 def open_word_file(filename):
-    word_list = []
+    """
+    Opens a text file containing list of words to append them into a list.
+
+    Parameters:
+    filename (file): .txt file containing valid words
+
+    Returns:
+    list: A list of words found in the text file.
+    """
     
+    word_list = []
     # read file, strip whitespaces into list
     with open(filename, 'r') as file:
         for line in file:
             word_list.append(line.strip())
-    
     return word_list
 
 
 
 def parse_commands():
+    """
+    Takes the command script, and parses them into arguments.
+
+    Returns:
+    Namespace: Contains the parsed arguments.
+    """
+    
     parser = argparse.ArgumentParser(description='Executes the client program command line.')
     
     # optional arguments
@@ -53,6 +64,19 @@ def parse_commands():
     
     
 def matches_mark(word, letter, position, mark):
+    """
+    Helper function that takes the word guess and checks if the letter matches
+    the mark at the given position.
+
+    Parameters:
+    word (string): Guessed word.
+    letter (string): Letter in the guessed word.
+    position (int): Given position.
+    mark (int): Mark feedback from the server; 0, 1, 2.
+
+    Returns:
+    boolean: True if the marked position matches the expected letter. False otherwise.
+    """
     # letter at marked position matches expected letter
     if mark == 2:
         if word[position] == letter:
@@ -75,6 +99,17 @@ def matches_mark(word, letter, position, mark):
 
 
 def filter_word_list(word_list, guesses):
+    """
+    Filters out the words based on guessed word, and whether the mark feedback
+    from the server matches the word.
+
+    Parameters:
+    word_list (list): List of original words.
+    guesses (list): List of guessed words, with their feedback marks.
+
+    Returns:
+    list: New list of words filtering out the incompatible words.
+    """
     # copy original list & filtered list
     filtered_list = word_list[:]
     
@@ -103,6 +138,18 @@ def filter_word_list(word_list, guesses):
     
     
 def run_client(port, tls_encryption, hostname, northeastern_username):
+    """
+    Runs the client program based on the information parsed from the given
+    script commands.
+
+    Parameters:
+    port (int): Port number parsed from script.
+    tls_encryption (boolean): True if TLS encryption used. False otherwise.
+    hostname (string): Name or IP address of the host.
+    northeastern_username (string): Username of the student, to obtain their
+    unique flags.
+    """
+    
     try:
         # create TCP client socket to connect with server
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -141,7 +188,7 @@ def run_client(port, tls_encryption, hostname, northeastern_username):
                 # print(f"Game id: {game_id})
                 
                 # random word first guess
-                first_guess = 'audio' #random.choice(word_list)
+                first_guess = 'swing' #random.choice(word_list)
                 guessed_words.append(first_guess)
                 
                 # send guess to server
@@ -168,7 +215,7 @@ def run_client(port, tls_encryption, hostname, northeastern_username):
             # 'bye' after correct word guessed; print flag
             elif server_message_type == 'bye':
                 secret_flag = server_message.get('flag')
-                print(f"\nSecret flag obtained: {secret_flag}\n")
+                print(f"{secret_flag}")
                 break
             
             # 'error' from server; print error
@@ -188,6 +235,10 @@ def run_client(port, tls_encryption, hostname, northeastern_username):
 
 
 def main():
+    """
+    Main function to execute the client program.
+    """
+    
     # begin script commands & run client
     arguments = parse_commands()
     run_client(arguments.port, arguments.tls_encryption, arguments.hostname, arguments.northeastern_username)
