@@ -20,6 +20,8 @@ The following resources were referenced during the implementation of
 this project:
 
 > https://stackoverflow.com/questions/46645755/makefile-to-do-nothing
+> https://stackoverflow.com/questions/20165843/argparse-how-to-handle-variable-number-of-arguments-nargs
+> https://docs.python.org/3/library/urllib.parse.html
 
 
 ## How to Install & Run Program
@@ -41,7 +43,7 @@ The script command to run the client program executes in this format:
 The project was implemented in the following order, as suggested by the
 "suggested implementaiton approach" section:
 - [x] command line parsing
-- [ ] connection establishment
+- [x] connection establishment
 - [ ] MKD & RMD commands
 - [ ] PASV & LIST command
 - [ ] STORE, RETR & DELE commands
