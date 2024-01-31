@@ -40,7 +40,7 @@ The script command to run the client program executes in this format:
 ## Design Strategies
 The project was implemented in the following order, as suggested by the
 "suggested implementaiton approach" section:
-- [ ] command line parsing
+- [x] command line parsing
 - [ ] connection establishment
 - [ ] MKD & RMD commands
 - [ ] PASV & LIST command
