@@ -44,6 +44,7 @@ The project was implemented in the following order, as suggested by the
 "suggested implementaiton approach" section:
 - [x] command line parsing
 - [x] connection establishment
+    - [x] login with USER and PASS commands
 - [ ] MKD & RMD commands
 - [ ] PASV & LIST command
 - [ ] STORE, RETR & DELE commands

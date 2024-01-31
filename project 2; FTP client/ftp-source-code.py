@@ -22,19 +22,19 @@ def parse_commands():
     parser.add_argument('param1', type=str, nargs='?', default='', help='Enter valid path/URL to file/directory on local filesystem or FTP server.')
     parser.add_argument('param2', type=str, nargs='?', default='', help='Enter valid path/URL to file/directory on local filesystem or FTP server.')
     # optional arguments
-    parser.add_argument('-verbose', action='store_true', help='Print all messages to & from FTP server.')
+    parser.add_argument('-v', '-verbose', action='store_true', help='Print all messages to & from FTP server.')
     
     # parse arguments
     arguments = parser.parse_args()
     
     # parse urls
     if arguments.param1 and arguments.param1.startswith('ftp://'):
-        username, password, hostname, port, path = parse_urls(arguments.param1, arguments)
+        username, password, hostname, port, path = parse_urls(arguments)
     else:
         local_path = arguments.param1
         
     if arguments.param2 and arguments.param2.startswith('ftp://'):
-        username, password, hostname, port, path = parse_urls(arguments.param2, arguments)
+        username, password, hostname, port, path = parse_urls(arguments)
     else:
         local_path = arguments.param2
     
@@ -43,7 +43,7 @@ def parse_commands():
     return arguments, username, password, hostname, port, path, local_path
 
 
-def parse_urls(url, arguments):
+def parse_urls(arguments):
     # initialize variables
     default_hostname = 'ftp.4700.network'
     default_port = 21
