@@ -14,6 +14,7 @@
 import socket
 import argparse
 import urllib.parse
+import re
     
 def parse_commands():
     parser = argparse.ArgumentParser(description='Executes the FTP client command line.')
@@ -22,7 +23,7 @@ def parse_commands():
     parser.add_argument('param1', type=str, nargs='?', default='', help='Enter valid path/URL to file/directory on local filesystem or FTP server.')
     parser.add_argument('param2', type=str, nargs='?', default='', help='Enter valid path/URL to file/directory on local filesystem or FTP server.')
     # optional arguments
-    parser.add_argument('-v', '-verbose', action='store_true', help='Print all messages to & from FTP server.')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Print all messages to & from FTP server.')
     
     # parse arguments
     arguments = parser.parse_args()
@@ -44,7 +45,7 @@ def parse_commands():
 
 
 def parse_urls(arguments):
-    # initialize variables
+    # initialize default & variables
     default_hostname = 'ftp.4700.network'
     default_port = 21
     default_username = 'anonymous'
@@ -57,10 +58,7 @@ def parse_urls(arguments):
     port = default_port
     path = default_path
     
-    # parse user, pass, hostname, port, path from param1
-    # ftp://[USER[:PASSWORD]@]HOST[:PORT]/PATH
-    # $ ./4700ftp ls ftp://bob:s3cr3t@ftp.example.com/
-    
+    # parse components from url
     if arguments.param1 and arguments.param1.startswith('ftp://'):
         parsed_url = urllib.parse.urlparse(arguments.param1)
         
@@ -97,56 +95,122 @@ def parse_urls(arguments):
     return username, password, hostname, port, path
 
 
-def run_client(port, hostname, username, password):
+def run_client(port, hostname, username, password, arguments):
     try:
-        # create socket to connect with server
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect((hostname, port))
+        # create client socket to connect with server
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((hostname, port))
         
         # receive hello from server
         while True:
-            print(client.recv(4096).decode())
+            print(client_socket.recv(4096).decode())
             break
         
         # send username to server
-        client.sendall(f"USER {username}\r\n".encode())
+        client_socket.sendall(f"USER {username}\r\n".encode())
         print(f"USER {username}")
         while True:
-            print(client.recv(4096).decode())
+            print(client_socket.recv(4096).decode())
             break
         
         # send pass to server
-        client.sendall(f"PASS {password}\r\n".encode())
+        client_socket.sendall(f"PASS {password}\r\n".encode())
         print(f"PASS {password}")
         while True:
-            print(client.recv(4096).decode())
+            print(client_socket.recv(4096).decode())
             break
         
+        # set type to 8-bit binary data mode
+        client_socket.sendall("TYPE I\r\n".encode())
+        print("TYPE I; 8-bit binary data mode")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # set mode to stream mode
+        client_socket.sendall("MODE S\r\n".encode())
+        print("MODE; stream mode")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # set stru to file-oriented mode
+        client_socket.sendall("STRU F\r\n".encode())
+        print("STRU; file-oriented mode")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # handle operations from command line
+        # ls
+        if arguments.operation == 'ls':
+            handle_ls(arguments, client_socket)
+            
+        
+        
         # quit server
-        client.sendall("QUIT\r\n".encode())
+        client_socket.sendall("QUIT\r\n".encode())
         print("QUIT")
         while True:
-            print(client.recv(4096).decode())
+            print(client_socket.recv(4096).decode())
             break
         
         # close connection
-        client.close()
+        client_socket.close()
         
     except Exception as e:
         print(f"Error: {e}")
         return None
         
+def handle_ls(arguments, client_socket):
+    # ask server for data socket
+    data_socket = handle_pasv(client_socket)
+    
+    # send ls command to server
+    client_socket.sendall(f"LIST {arguments.param1}\r\n".encode())
+    print(f"LIST from {arguments.param1}")
+
+    # receive data from server
+    list = data_socket.recv(4096).decode()
+    print(f"LIST Data: {list}")
+    
+    
+    # close data socket
+    data_socket.close()
         
+        
+def handle_pasv(client_socket):
+    # send pasv command to server
+    client_socket.sendall("PASV\r\n".encode())
+    response = client_socket.recv(4096).decode()
+    print(response)
+    
+    # parse response, '227 Entering Passive Mode (1,2,3,4,5,6).'
+    # split first parenthesis, '1,2,3,4,5,6).'
+    first_split = response.split('(')[1]
+    # split second parenthesis, '1,2,3,4,5,6'
+    second_split = first_split.split(')')[0]
+    numbers = second_split.split(',')
+    
+    # ip; first 4 numbers
+    ip = '.'.join(numbers[:4])
+    # port; left shift 8 bits (mult by 256) & add next number
+    port = (int(numbers[4]) * 256) + int(numbers[5])
+        
+    # create data socket to connect with server
+    data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    data_socket.connect((ip, port))
+    print(f"Data socket connected; {ip}:{port}")
+    
+    return data_socket
+
+
 def main():
     # parse command line arguments
     arguments, username, password, hostname, port, path, local_path = parse_commands()
-    # operation = arguments.operation
-    # param1 = arguments.param1
-    # param2 = arguments.param2
-    # verbose = arguments.verbose
     
     # run client
-    run_client(port, hostname, username, password)
+    run_client(port, hostname, username, password, arguments)
     
 if __name__ == '__main__':
     main()
