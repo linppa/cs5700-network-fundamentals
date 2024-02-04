@@ -26,11 +26,6 @@ def parse_commands():
     # parse arguments
     arguments = parser.parse_args()
 
-    # # cp & mv require destination_url
-    # if arguments.operation in ['cp', 'mv']:
-    #     if not arguments.destination_url:
-    #         parser.error(f"{arguments.operation} needs source & destination path.")
-
     return arguments
 
     
@@ -75,51 +70,7 @@ def parse_ftp_url(url):
 
 
 def run_client(arguments):
-    # remote_path = ''
-    # local_path = ''
-    # path = ''
-        
-    # if arguments.operation in ['cp', 'mv']:
-    #     if arguments.source_url.startswith('ftp://'):
-    #         port, hostname, username, password, remote_path = parse_ftp_url(arguments.source_url)
-    #         local_path = arguments.destination_url
-    #     elif arguments.destination_url.startswith('ftp://'):
-    #         port, hostname, username, password, remote_path = parse_ftp_url(arguments.destination_url)
-    #         local_path = arguments.source_url        
-        
-    # if arguments.operation in ['cp', 'mv']:
-    #     if 'ftp://' in arguments.source_url or 'ftp://' in arguments.destination_url:
-    #         handle_cp(arguments)
-    #     else:
-    #         print(f"Error: {arguments.operation} needs source & destination path.")
-    
-    # if arguments.operation in ['ls', 'mkdir', 'rm', 'rmdir']:
-    #     port, hostname, username, password, path = parse_ftp_url(arguments.source_url)
-    # else:
-    #     if arguments.source_url.startswith('ftp://'):
-    #         port, hostname, username, password, remote_path = parse_ftp_url(arguments.source_url)
-    #         local_path = arguments.destination_url
-    #     elif arguments.destination_url.startswith('ftp://'):
-    #         port, hostname, username, password, remote_path = parse_ftp_url(arguments.destination_url)
-    #         local_path = arguments.source_url
-    #     else:
-    #         print(f"Error: {arguments.operation} needs source & destination path.")
-    #         return None
-    
-    port, hostname, username, password, path = parse_ftp_url(arguments.source_url)
-    local_path = ''
-    remote_path = ''
-    
-    if arguments.operation in ['cp', 'mv']:
-        if arguments.source_url.startswith('ftp://'):
-            remote_path = path
-            local_path = arguments.destination_url
-        elif arguments.destination_url and arguments.destination_url.startswith('ftp://'):
-            port, hostname, username, password, remote_path = parse_ftp_url(arguments.destination_url)
-            local_path = arguments.source_url
-        else:
-            print(f"Error: {arguments.operation} needs source & destination path.")
-            return None
+
     
     try:
         # create client socket to connect with server
