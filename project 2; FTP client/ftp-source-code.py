@@ -10,92 +10,117 @@
     -verbose  
     
 '''
-
 import socket
 import argparse
 import urllib.parse
-import re
+
     
 def parse_commands():
     parser = argparse.ArgumentParser(description='Executes the FTP client command line.')
     # required arguments
     parser.add_argument('operation', type=str, choices=['ls', 'mkdir', 'rm', 'rmdir', 'cp', 'mv'], help='Enter valid operation.')
-    parser.add_argument('param1', type=str, nargs='?', default='', help='Enter valid path/URL to file/directory on local filesystem or FTP server.')
-    parser.add_argument('param2', type=str, nargs='?', default='', help='Enter valid path/URL to file/directory on local filesystem or FTP server.')
+    parser.add_argument('source_url', type=str, help='Enter valid path/URL to file/directory.')
     # optional arguments
-    parser.add_argument('-v', '--verbose', action='store_true', help='Print all messages to & from FTP server.')
-    
+    parser.add_argument('destination_url', type=str, nargs='?', help='Enter valid path/URL to file/directory.')
+
     # parse arguments
     arguments = parser.parse_args()
+
+    # # cp & mv require destination_url
+    # if arguments.operation in ['cp', 'mv']:
+    #     if not arguments.destination_url:
+    #         parser.error(f"{arguments.operation} needs source & destination path.")
+
+    return arguments
+
     
-    # parse urls
-    if arguments.param1 and arguments.param1.startswith('ftp://'):
-        username, password, hostname, port, path = parse_urls(arguments)
+def parse_ftp_url(url):
+    parsed_url = urllib.parse.urlparse(url)
+    
+    if not url.startswith('ftp://'):
+        return None, None, None, None, url
+
+    # if username provided
+    if parsed_url.username:
+        username = parsed_url.username
     else:
-        local_path = arguments.param1
+        username = 'anonymous'
         
-    if arguments.param2 and arguments.param2.startswith('ftp://'):
-        username, password, hostname, port, path = parse_urls(arguments)
+    # if password provided
+    if parsed_url.password:
+        password = parsed_url.password
     else:
-        local_path = arguments.param2
-    
+        password = ''
         
-    print(f"Args: {arguments}")
-    return arguments, username, password, hostname, port, path, local_path
-
-
-def parse_urls(arguments):
-    # initialize default & variables
-    default_hostname = 'ftp.4700.network'
-    default_port = 21
-    default_username = 'anonymous'
-    default_password = None
-    default_path = '/'
-    
-    username = default_username
-    password = default_password
-    hostname = default_hostname
-    port = default_port
-    path = default_path
-    
-    # parse components from url
-    if arguments.param1 and arguments.param1.startswith('ftp://'):
-        parsed_url = urllib.parse.urlparse(arguments.param1)
+    # if hostname provided
+    if parsed_url.hostname:
+        hostname = parsed_url.hostname
+    else:
+        hostname = 'ftp.4700.network'
         
-        # if username provided
-        if parsed_url.username:
-            username = parsed_url.username
-        else:
-            username = default_username
-            
-        # if password provided
-        if parsed_url.password:
-            password = parsed_url.password
-        else:
-            password = default_password
-            
-        # if hostname provided
-        if parsed_url.hostname:
-            hostname = parsed_url.hostname
-        else:
-            hostname = default_hostname
-            
-        # if port provided
-        if parsed_url.port:
-            port = parsed_url.port
-        else:
-            port = default_port
-            
-        # if path provided
-        if parsed_url.path:
-            path = parsed_url.path
-        else:
-            path = default_path
-            
-    return username, password, hostname, port, path
+    # if port provided
+    if parsed_url.port:
+        port = parsed_url.port
+    else:
+        port = 21
+        
+    # if path provided
+    if parsed_url.path:
+        path = parsed_url.path
+    else:
+        path = '/'
+    
+    return port, hostname, username, password, path
+    
 
 
-def run_client(port, hostname, username, password, arguments):
+def run_client(arguments):
+    # remote_path = ''
+    # local_path = ''
+    # path = ''
+        
+    # if arguments.operation in ['cp', 'mv']:
+    #     if arguments.source_url.startswith('ftp://'):
+    #         port, hostname, username, password, remote_path = parse_ftp_url(arguments.source_url)
+    #         local_path = arguments.destination_url
+    #     elif arguments.destination_url.startswith('ftp://'):
+    #         port, hostname, username, password, remote_path = parse_ftp_url(arguments.destination_url)
+    #         local_path = arguments.source_url        
+        
+    # if arguments.operation in ['cp', 'mv']:
+    #     if 'ftp://' in arguments.source_url or 'ftp://' in arguments.destination_url:
+    #         handle_cp(arguments)
+    #     else:
+    #         print(f"Error: {arguments.operation} needs source & destination path.")
+    
+    # if arguments.operation in ['ls', 'mkdir', 'rm', 'rmdir']:
+    #     port, hostname, username, password, path = parse_ftp_url(arguments.source_url)
+    # else:
+    #     if arguments.source_url.startswith('ftp://'):
+    #         port, hostname, username, password, remote_path = parse_ftp_url(arguments.source_url)
+    #         local_path = arguments.destination_url
+    #     elif arguments.destination_url.startswith('ftp://'):
+    #         port, hostname, username, password, remote_path = parse_ftp_url(arguments.destination_url)
+    #         local_path = arguments.source_url
+    #     else:
+    #         print(f"Error: {arguments.operation} needs source & destination path.")
+    #         return None
+    
+    port, hostname, username, password, path = parse_ftp_url(arguments.source_url)
+    local_path = ''
+    remote_path = ''
+    
+    if arguments.operation in ['cp', 'mv']:
+        if arguments.source_url.startswith('ftp://'):
+            remote_path = path
+            local_path = arguments.destination_url
+        elif arguments.destination_url and arguments.destination_url.startswith('ftp://'):
+            port, hostname, username, password, remote_path = parse_ftp_url(arguments.destination_url)
+            local_path = arguments.source_url
+        else:
+            print(f"Error: {arguments.operation} needs source & destination path.")
+            return None
+    
     try:
         # create client socket to connect with server
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -141,11 +166,31 @@ def run_client(port, hostname, username, password, arguments):
             print(client_socket.recv(4096).decode())
             break
         
-        # handle operations from command line
+        # ----- handle operations -----
         # ls
         if arguments.operation == 'ls':
-            handle_ls(arguments, client_socket)
+            handle_ls(client_socket, path)
             
+        # mkdir
+        elif arguments.operation == 'mkdir':
+            handle_mkdir(client_socket, path)
+            
+        # rmdir
+        elif arguments.operation == 'rmdir':
+            handle_rmdir(client_socket, path)
+            
+        # cp
+        elif arguments.operation == 'cp':
+            handle_cp(arguments, client_socket, local_path, remote_path)
+            
+        # mv
+        elif arguments.operation == 'mv':
+            pass
+        
+        # rm
+        elif arguments.operation == 'rm':
+            pass
+        
         
         
         # quit server
@@ -162,23 +207,7 @@ def run_client(port, hostname, username, password, arguments):
         print(f"Error: {e}")
         return None
         
-def handle_ls(arguments, client_socket):
-    # ask server for data socket
-    data_socket = handle_pasv(client_socket)
-    
-    # send ls command to server
-    client_socket.sendall(f"LIST {arguments.param1}\r\n".encode())
-    print(f"LIST from {arguments.param1}")
 
-    # receive data from server
-    list = data_socket.recv(4096).decode()
-    print(f"LIST Data: {list}")
-    
-    
-    # close data socket
-    data_socket.close()
-        
-        
 def handle_pasv(client_socket):
     # send pasv command to server
     client_socket.sendall("PASV\r\n".encode())
@@ -204,13 +233,101 @@ def handle_pasv(client_socket):
     
     return data_socket
 
+       
+def handle_ls(client_socket, path):
+    # send pasv command to server
+    data_socket = handle_pasv(client_socket)
+    
+    # send ls command to server
+    client_socket.sendall(f"LIST {path}\r\n".encode())
+    print(client_socket.recv(4096).decode())
 
+    # receive data from server data socket
+    data_list = data_socket.recv(4096).decode()
+    print(f"LIST Data: \n{data_list}")
+    
+    # close data socket
+    data_socket.close()
+    
+
+def handle_mkdir(client_socket, path):
+    # send mkdir command to server
+    client_socket.sendall(f"MKD {path}\r\n".encode())
+    print(client_socket.recv(4096).decode())
+
+
+def handle_rmdir(client_socket, path):
+    # send rmdir command to server
+    client_socket.sendall(f"RMD {path}\r\n".encode())
+    print(client_socket.recv(4096).decode())
+    
+    
+def handle_cp(arguments, client_socket, local_path, remote_path):
+    if arguments.source_url.startswith('ftp://'):
+        handle_stor(client_socket, local_path, remote_path)
+    elif arguments.destination_url.startswith('ftp://'):
+        handle_retr(client_socket, remote_path, local_path)
+    else:
+        print(f"Error: {arguments.operation} needs source & destination path.")
+        
+        
+
+            
+
+def handle_stor(client_socket, local_path, remote_path):
+    # send pasv command to server
+    data_socket = handle_pasv(client_socket)
+    
+    # send stor/upload command to server
+    client_socket.sendall(f"STOR {remote_path}\r\n".encode())
+    print(client_socket.recv(4096).decode())
+    
+    # send file to server data socket
+    with open(local_path, 'rb') as file:
+        data = file.read(4096)
+        while data:
+            data_socket.sendall(data)
+            data = file.read(4096)
+    
+    # close data socket
+    data_socket.close()
+    print(f"File {local_path} sent to {remote_path}")
+    
+
+def handle_retr(client_socket, remote_path, local_path):
+    # send pasv command to server
+    data_socket = handle_pasv(client_socket)
+    
+    # send retr/download command to server
+    client_socket.sendall(f"RETR {remote_path}\r\n".encode())
+    print(client_socket.recv(4096).decode())
+    
+    # receive file from server data socket
+    with open(local_path, 'wb') as file:
+        while True:
+            data = data_socket.recv(4096)
+            if not data:
+                break
+            file.write(data)
+    
+    # close data socket
+    data_socket.close()
+    print(f"File {remote_path} received to {local_path}")
+    
+
+def handle_mv():
+    pass
+
+def handle_rm():
+    pass
+
+    
 def main():
     # parse command line arguments
-    arguments, username, password, hostname, port, path, local_path = parse_commands()
-    
+    arguments = parse_commands()
+
     # run client
-    run_client(port, hostname, username, password, arguments)
+    run_client(arguments)
     
 if __name__ == '__main__':
     main()

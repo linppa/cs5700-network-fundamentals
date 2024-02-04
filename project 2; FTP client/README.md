@@ -22,7 +22,8 @@ this project:
 > https://stackoverflow.com/questions/46645755/makefile-to-do-nothing
 > https://stackoverflow.com/questions/20165843/argparse-how-to-handle-variable-number-of-arguments-nargs
 > https://docs.python.org/3/library/urllib.parse.html
-> https://docs.python.org/3/library/re.html
+> https://setapp.com/how-to/ftp-on-mac#
+
 
 
 ## How to Install & Run Program
@@ -66,16 +67,20 @@ This FTP client supports the following operations:
 
 ## Design Strategies
 The project was implemented in the following order, as suggested by the
-"suggested implementaiton approach" section:
+"suggested implementation approach" section:
 - [x] command line parsing
 - [x] connection establishment
     - [x] login with USER & PASS commands
     - [x] set TYPE, MODE, & STRU commands
-- [ ] PASV & LIST command
+- [ ] PASV & LIST command (requires data channel)
     - [x] parse PASV response to get IP & port
-    
-- [ ] MKD & RMD commands
+    - [x] establish data channel connection
+- [x] MKD & RMD commands (don't require data channel)
 - [ ] STORE, RETR & DELE commands
+    - [ ] STORE (upload)
+    - [ ] RETR (download)
+    - [ ] DELE (delete)
+
 - [ ] double check client works successfully on a CCIS linux machine (login.ccs.neu.edu)
 
 
