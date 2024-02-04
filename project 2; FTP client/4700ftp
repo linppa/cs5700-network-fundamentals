@@ -14,12 +14,13 @@
     ./ftp-source-code.py cp test2.txt ftp://linppa:b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076@ftp.4700.network/
     ./ftp-source-code.py cp ftp://linppa:b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076@ftp.4700.network/hello.txt test-copy.txt
 
-
-
+    ./ftp-source-code.py mv ftp://linppa:b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076@ftp.4700.network/test.txt test-hello-move.txt
+    ./ftp-source-code.py mv test-hello-move.txt ftp://linppa:b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076@ftp.4700.network/test.txt
 '''
 import socket
 import argparse
 import urllib.parse
+import os
 
     
 def parse_commands():
@@ -32,7 +33,6 @@ def parse_commands():
 
     # parse arguments
     arguments = parser.parse_args()
-
     return arguments
 
     
@@ -87,6 +87,7 @@ def run_client(arguments):
     # parse command line arguments
     username, password, hostname, port, ftp_path = parse_ftp_url(arguments)
     
+    # -------- handle client connection --------
     try:
         # create client socket to connect with server
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -154,12 +155,11 @@ def run_client(arguments):
         elif arguments.operation == 'cp':
             handle_cp(client_socket, arguments)
  
-            
         # mv
         elif arguments.operation == 'mv':
-            pass
+            handle_mv(client_socket, arguments)
         
-        
+        # -------- handle exit --------
         # quit server
         client_socket.sendall("QUIT\r\n".encode())
         print("QUIT run client;")
@@ -257,33 +257,35 @@ def handle_cp(client_socket, arguments):
     else:
         print("Invalid paths for cp operation.")
 
-            
 
 def handle_stor(client_socket, arguments):
     # send pasv command to server
     data_socket = handle_pasv(client_socket)
     
     # STOR; local to ftp
-    local_path = urllib.parse.urlparse(arguments.param1).path
+    # get remote path from param2
     remote_path = urllib.parse.urlparse(arguments.param2).path
     
-    # send stor command to server
-    client_socket.sendall(f"STOR {local_path}\r\n".encode())
-    while True:
-        print(client_socket.recv(4096).decode())
-        break
+    # remote just directory, add local filename from param1
+    if remote_path.endswith('/'):
+        filename = os.path.basename(arguments.param1)
+        remote_path = os.path.join(remote_path, filename)
+    
+    # send STOR command to server
+    client_socket.sendall(f"STOR {remote_path}\r\n".encode())
+    response = client_socket.recv(4096).decode()
+    print(response)
     
     # open file, read binary & send through data socket
-    with open(local_path, 'rb') as file:
-        while True:
-            data = file.read(4096)
-            if not data:
-                break
+    with open(arguments.param1, 'rb') as file:
+        data = file.read(4096)
+        while data:
             data_socket.sendall(data)
+            data = file.read(4096)
     
     # close data socket
     data_socket.close()
-    client_socket.sendall("QUIT\r\n".encode())
+    return True
 
 
 def handle_retr(client_socket, arguments):
@@ -291,33 +293,56 @@ def handle_retr(client_socket, arguments):
     data_socket = handle_pasv(client_socket)
     
     # RETR; ftp to local
-    local_path = urllib.parse.urlparse(arguments.param2).path
     remote_path = urllib.parse.urlparse(arguments.param1).path
     
-    # send retr command to server
+    # determine local path to save
+    if arguments.param2:
+        local_path = arguments.param2
+    else:
+        local_path = os.path.basename(remote_path)
+    
+    # send RETR command to server
     client_socket.sendall(f"RETR {remote_path}\r\n".encode())
-    while True:
-        response = client_socket.recv(4096).decode()
-        print(response)
-        break
-
+    response = client_socket.recv(4096).decode()
+    print(response)
     
     # open file, write binary & receive through data socket
     with open(local_path, 'wb') as file:
-        while True:
-            data = data_socket.recv(4096)
-            if not data:
-                break
+        data = data_socket.recv(4096)
+        while data:
             file.write(data)
-
+            data = data_socket.recv(4096)
+    
     # close data socket
     data_socket.close()
-    client_socket.sendall("QUIT\r\n".encode())
+    return True
     
 
-def handle_mv():
-    pass
-
+def handle_mv(client_socket, arguments):
+    # need to download file from server RETR
+    if arguments.param1.startswith('ftp://') and not arguments.param2.startswith('ftp://'):
+        if handle_retr(client_socket, arguments) == True:
+            # delete remote file
+            remote_path = urllib.parse.urlparse(arguments.param1).path
+            print(f"Deleted remote file: {remote_path}")
+        else:
+            print("Unable to download file.")
+            
+    # need to upload file to server STOR
+    elif not arguments.param1.startswith('ftp://') and arguments.param2.startswith('ftp://'):
+        if handle_stor(client_socket, arguments) == True:
+            # delete local file
+            local_path = arguments.param1
+            try:
+                os.remove(local_path)
+                print(f"Deleted local file: {local_path}")
+            # catch errors
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            print("Unable to upload file.")
+    else:
+        print("Invalid paths for mv operation.")
 
     
 def main():
