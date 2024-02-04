@@ -67,26 +67,26 @@ This FTP client supports the following operations:
 ### Examples;
 The ls, mkdir, rm, and rmdir commands execute in the same way. Here is an
 example of the ls command:
-To list the files in the FTP server, you would
-execute the following script to the command line depending on the location of
-the directory:
-`$ ./4700ftp ls ftp://bob:s3cr3t@ftp.example.com/`
-`$ ./4700ftp ls ftp://bob:s3cr3t@ftp.example.com/documents/homeworks`
+> To list the files in the FTP server, you would
+> execute the following script to the command line depending on the location of
+> the directory:
+> `$ ./4700ftp ls ftp://bob:s3cr3t@ftp.example.com/`
+> `$ ./4700ftp ls ftp://bob:s3cr3t@ftp.example.com/documents/homeworks`
 
 
 The cp and mv commands execute in the same way. Here are some examples of the cp
 and mv commands:
-To copy a file from the local machine to the FTP server (and
-vice versa), you would execute the following script to the command line
-depending on the location of the directory:
-`$ ./4700ftp cp other-hw/essay.pdf ftp://bob:s3cr3t@ftp.example.com/documents/homeworks-v2/essay.pdf`
-`$ ./4700ftp cp ftp://bob:s3cr3t@ftp.example.com/documents/todo-list.txt other-hw/todo-list.txt`
+> To copy a file from the local machine to the FTP server (and
+> vice versa), you would execute the following script to the command line
+> depending on the location of the directory:
+> `$ ./4700ftp cp other-hw/essay.pdf ftp://bob:s3cr3t@ftp.example.com/documents/homeworks-v2/essay.pdf`
+> `$ ./4700ftp cp ftp://bob:s3cr3t@ftp.example.com/documents/todo-list.txt other-hw/todo-list.txt`
 
-To move a file from the local machine to the FTP server (and vice versa), you
-would execute the following script to the command line depending on the location
-of the directory:
-`./ftp-source-code.py mv test-hello-move.txt ftp://linppa:b4da98ea@ftp.4700.network/test.txt`
-`./ftp-source-code.py mv ftp://linppa:b4da98ea@ftp.4700.network/test.txt test-hello-move.txt`
+> To move a file from the local machine to the FTP server (and vice versa), you
+> would execute the following script to the command line depending on the location
+> of the directory:
+> `./ftp-source-code.py mv test-hello-move.txt ftp://linppa:b4da98ea@ftp.4700.network/test.txt`
+> `./ftp-source-code.py mv ftp://linppa:b4da98ea@ftp.4700.network/test.txt test-hello-move.txt`
 
 
 ## Design Strategies;
