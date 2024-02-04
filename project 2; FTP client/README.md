@@ -107,8 +107,4 @@ The project was implemented in the following order, as suggested by the
 - [x] CP & MV commands
     - [x] CP (copy)
     - [x] MV (move)
-- [ ] double check client works successfully on a CCIS linux machine (login.ccs.neu.edu)
-
-## Testing;
-The 
-
+- [x] double check client works successfully on a CCIS linux machine (login.ccs.neu.edu)
