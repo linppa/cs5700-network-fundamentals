@@ -1,0 +1,454 @@
+#!/usr/bin/env python3
+'''
+Linda Quach
+CS5700 Networks
+Spring 2024
+Project 2; FTP Client
+'''
+
+import socket
+import argparse
+import urllib.parse
+import os
+
+
+def parse_commands():
+    '''
+    Parses command line arguments.
+
+    Returns:
+        Namespace: The parsed arguments.
+    '''
+    parser = argparse.ArgumentParser(description='Executes the FTP client command line.')
+    # required arguments
+    parser.add_argument('operation', type=str, choices=['ls', 'mkdir', 'rm', 'rmdir', 'cp', 'mv'], help='Enter valid operation.')
+    parser.add_argument('param1', type=str, help='Enter valid path/URL to file/directory.')
+    # optional arguments
+    parser.add_argument('param2', type=str, nargs='?', help='Enter valid path/URL to file/directory.')
+
+    # parse arguments
+    arguments = parser.parse_args()
+    return arguments
+
+    
+def parse_ftp_url(arguments):
+    '''
+    Parses ftp url to extract username, password, hostname, port, and path.
+
+    Args:
+        arguments (Namespace): The parsed arguments.
+    Returns:
+        tuple: The username, password, hostname, port, and path.
+    '''
+    ftp_url = ''
+    parsed_url = ''
+    
+    # determine ftp url to parse info
+    if arguments.param1.startswith('ftp://'):
+        ftp_url = arguments.param1
+    elif arguments.param2.startswith('ftp://'):
+        ftp_url = arguments.param2
+    else:
+        print(f"Missing ftp URL.")
+    
+    parsed_url = urllib.parse.urlparse(ftp_url)
+
+    # if username provided
+    if parsed_url.username:
+        username = parsed_url.username
+    else:
+        username = 'anonymous'
+        
+    # if password provided
+    if parsed_url.password:
+        password = parsed_url.password
+    else:
+        password = ''
+        
+    # if hostname provided
+    if parsed_url.hostname:
+        hostname = parsed_url.hostname
+    else:
+        hostname = 'ftp.4700.network'
+        
+    # if port provided
+    if parsed_url.port:
+        port = parsed_url.port
+    else:
+        port = 21
+        
+    # if path provided
+    if parsed_url.path:
+        ftp_path = parsed_url.path
+    else:
+        ftp_path = '/'
+    
+    return username, password, hostname, port, ftp_path
+    
+
+def run_client(arguments):
+    '''
+    Runs the FTP client by connecting to the server and executing the specified
+    operation. When the operation is complete, the client disconnects from the server.
+
+    Args:
+        arguments (Namespace): The parsed arguments.
+    '''
+    # parse command line arguments
+    username, password, hostname, port, ftp_path = parse_ftp_url(arguments)
+    
+    # -------- handle client connection --------
+    try:
+        # create client socket to connect with server
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((hostname, port))
+        
+        # receive hello from server
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # send username to server
+        client_socket.sendall(f"USER {username}\r\n".encode())
+        print(f"USER {username}")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # send pass to server
+        client_socket.sendall(f"PASS {password}\r\n".encode())
+        print(f"PASS {password}")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # -------- handle modes --------
+        # set type to 8-bit binary data mode
+        client_socket.sendall("TYPE I\r\n".encode())
+        print("TYPE I; 8-bit binary data mode")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # set mode to stream mode
+        client_socket.sendall("MODE S\r\n".encode())
+        print("MODE; stream mode")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # set stru to file-oriented mode
+        client_socket.sendall("STRU F\r\n".encode())
+        print("STRU; file-oriented mode")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # -------- handle operations --------
+        # ls
+        if arguments.operation == 'ls':
+            handle_ls(client_socket, ftp_path)
+            
+        # mkdir
+        elif arguments.operation == 'mkdir':
+            handle_mkdir(client_socket, ftp_path)
+            
+        # rmdir
+        elif arguments.operation == 'rmdir':
+            handle_rmdir(client_socket, ftp_path)
+        
+        # rm
+        elif arguments.operation == 'rm':
+            handle_rm(client_socket, ftp_path)
+            
+        # cp
+        elif arguments.operation == 'cp':
+            handle_cp(client_socket, arguments)
+ 
+        # mv
+        elif arguments.operation == 'mv':
+            handle_mv(client_socket, arguments)
+        
+        # -------- handle exit --------
+        # quit server
+        client_socket.sendall("QUIT\r\n".encode())
+        print("QUIT run client;")
+        while True:
+            print(client_socket.recv(4096).decode())
+            break
+        
+        # close connection
+        client_socket.close()
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+        
+
+def handle_pasv(client_socket):
+    '''
+    Handles the passive mode by sending the PASV command to the server and
+    creating a data socket to connect with the server. The data socket is then
+    returned. 
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+    Returns:
+        socket: The data socket to connect with the server.
+    '''
+    # send pasv command to server
+    client_socket.sendall("PASV\r\n".encode())
+    while True:
+        response = client_socket.recv(4096).decode()
+        print(response)
+        break
+    
+    # parse response, '227 Entering Passive Mode (1,2,3,4,5,6).'
+    # split first parenthesis, '1,2,3,4,5,6).'
+    first_split = response.split('(')[1]
+    # split second parenthesis, '1,2,3,4,5,6'
+    second_split = first_split.split(')')[0]
+    numbers = second_split.split(',')
+    
+    # ip; first 4 numbers
+    ip = '.'.join(numbers[:4])
+    # port; left shift 8 bits (mult by 256) & add next number
+    port = (int(numbers[4]) * 256) + int(numbers[5])
+        
+    # create data socket to connect with server
+    data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    data_socket.connect((ip, port))
+    print(f"Data socket connected; {ip}:{port}")
+    
+    return data_socket
+
+       
+def handle_ls(client_socket, path):
+    '''
+    Handles the ls operation by sending the LIST command to the server and
+    receiving the data from the server data socket. The list is then printed.
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+        path (str): The path to the directory to list.
+    '''
+    # send pasv command to server
+    data_socket = handle_pasv(client_socket)
+    
+    # send ls command to server
+    client_socket.sendall(f"LIST {path}\r\n".encode())
+    print(client_socket.recv(4096).decode())
+
+    # receive data from server data socket
+    data_list = data_socket.recv(4096).decode()
+    print(f"LIST Data: \n{data_list}")
+    
+    # close data socket
+    data_socket.close()
+    
+
+def handle_mkdir(client_socket, path):
+    '''
+    Handles the mkdir operation by sending the MKD command to the server and
+    printing the server response.
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+        path (str): The path to the directory to create.
+    '''
+    # send mkdir command to server
+    client_socket.sendall(f"MKD {path}\r\n".encode())
+    while True:
+        print(client_socket.recv(4096).decode())
+        break
+
+
+def handle_rmdir(client_socket, path):
+    '''
+    Handles the rmdir operation by sending the RMD command to the server and
+    printing the server response.
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+        path (str): The path to the directory to remove.
+    '''
+    # send rmdir command to server
+    client_socket.sendall(f"RMD {path}\r\n".encode())
+    while True:
+        print(client_socket.recv(4096).decode())
+        break
+
+
+def handle_rm(client_socket, path):
+    '''
+    Handles the rm operation by sending the DELE command to the server and
+    printing the server response.
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+        path (str): The path to the file to remove.
+    '''
+    # send rm/delete command to server
+    client_socket.sendall(f"DELE {path}\r\n".encode())
+    while True:
+        print(client_socket.recv(4096).decode())
+        break
+    
+    
+def handle_cp(client_socket, arguments):
+    '''
+    Handles the cp operation by sending the RETR or STOR command to the server
+    to download or upload a file, respectively. When copying from the server to
+    the local machine, the RETR command is used. When copying from the local
+    machine to the server, the STOR command is used.
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+        arguments (Namespace): The parsed arguments.
+    '''
+    # need to download file from server RETR
+    if arguments.param1.startswith('ftp://') and not arguments.param2.startswith('ftp://'):
+        ftp_url = arguments.param1
+        local_url = arguments.param2
+        handle_retr(client_socket, arguments)
+    # need to upload file to server STOR
+    elif not arguments.param1.startswith('ftp://') and arguments.param2.startswith('ftp://'):
+        local_url = arguments.param1
+        ftp_url = arguments.param2
+        handle_stor(client_socket, arguments)
+    else:
+        print("Invalid paths for cp operation.")
+
+
+def handle_stor(client_socket, arguments):
+    '''
+    Handles the STOR operation by sending the STOR command to the server and
+    sending the file through the data socket. 
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+        arguments (Namespace): The parsed arguments.
+    Returns:
+        bool: True if the operation was successful, False otherwise.
+    '''
+    # send pasv command to server
+    data_socket = handle_pasv(client_socket)
+    
+    # STOR; local to ftp
+    # get remote path from param2
+    remote_path = urllib.parse.urlparse(arguments.param2).path
+    
+    # remote just directory, add local filename from param1
+    if remote_path.endswith('/'):
+        filename = os.path.basename(arguments.param1)
+        remote_path = os.path.join(remote_path, filename)
+    
+    # send STOR command to server
+    client_socket.sendall(f"STOR {remote_path}\r\n".encode())
+    response = client_socket.recv(4096).decode()
+    print(response)
+    
+    # open file, read binary & send through data socket
+    with open(arguments.param1, 'rb') as file:
+        data = file.read(4096)
+        while data:
+            data_socket.sendall(data)
+            data = file.read(4096)
+    
+    # close data socket
+    data_socket.close()
+    return True
+
+
+def handle_retr(client_socket, arguments):
+    '''
+    Handles the RETR operation by sending the RETR command to the server and
+    receiving the file through the data socket.
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+        arguments (Namespace): The parsed arguments.
+    Returns:
+        bool: True if the operation was successful, False otherwise.
+    '''
+    # send pasv command to server
+    data_socket = handle_pasv(client_socket)
+    
+    # RETR; ftp to local
+    remote_path = urllib.parse.urlparse(arguments.param1).path
+    
+    # determine local path to save
+    if arguments.param2:
+        local_path = arguments.param2
+    else:
+        local_path = os.path.basename(remote_path)
+    
+    # send RETR command to server
+    client_socket.sendall(f"RETR {remote_path}\r\n".encode())
+    response = client_socket.recv(4096).decode()
+    print(response)
+    
+    # open file, write binary & receive through data socket
+    with open(local_path, 'wb') as file:
+        data = data_socket.recv(4096)
+        while data:
+            file.write(data)
+            data = data_socket.recv(4096)
+    
+    # close data socket
+    data_socket.close()
+    return True
+    
+
+def handle_mv(client_socket, arguments):
+    '''
+    Handles the mv operation by sending the RETR or STOR command to the server
+    to download or upload a file, respectively. When moving from the server to
+    the local machine, the RETR command is used. When moving from the local
+    machine to the server, the STOR command is used. After the file is moved,
+    the original file is deleted.
+
+    Args:
+        client_socket (socket): The client socket to connect with the server.
+        arguments (Namespace): The parsed arguments.
+    '''
+    # need to download file from server RETR
+    if arguments.param1.startswith('ftp://') and not arguments.param2.startswith('ftp://'):
+        if handle_retr(client_socket, arguments) == True:
+            # delete remote file
+            remote_path = urllib.parse.urlparse(arguments.param1).path
+            print(f"Deleted remote file: {remote_path}")
+        else:
+            print("Unable to download file.")
+            
+    # need to upload file to server STOR
+    elif not arguments.param1.startswith('ftp://') and arguments.param2.startswith('ftp://'):
+        if handle_stor(client_socket, arguments) == True:
+            # delete local file
+            local_path = arguments.param1
+            try:
+                os.remove(local_path)
+                print(f"Deleted local file: {local_path}")
+            # catch errors
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            print("Unable to upload file.")
+    else:
+        print("Invalid paths for mv operation.")
+
+    
+def main():
+    '''
+    The main function of the FTP client. The program starts by parsing the
+    command line arguments and then runs the FTP client.
+    '''
+    # parse command line arguments
+    arguments = parse_commands()
+
+    # run client
+    run_client(arguments)
+    
+    
+if __name__ == '__main__':
+    main()
