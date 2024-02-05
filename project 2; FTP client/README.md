@@ -70,7 +70,7 @@ example of the ls command:
 > To list the files in the FTP server, you would
 > execute the following script to the command line depending on the location of
 > the directory:
-> `$ ./4700ftp ls ftp://bob:s3cr3t@ftp.example.com/`
+> `$ ./4700ftp ls ftp://linppa:b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076@ftp.4700.network/`
 > `$ ./4700ftp ls ftp://bob:s3cr3t@ftp.example.com/documents/homeworks`
 
 
@@ -85,8 +85,8 @@ and mv commands:
 > To move a file from the local machine to the FTP server (and vice versa), you
 > would execute the following script to the command line depending on the location
 > of the directory:
-> `./ftp-source-code.py mv test-hello-move.txt ftp://linppa:b4da98ea@ftp.4700.network/test.txt`
-> `./ftp-source-code.py mv ftp://linppa:b4da98ea@ftp.4700.network/test.txt test-hello-move.txt`
+> `./4700ftp mv test-hello-move.txt ftp://linppa:b4da98ea@ftp.4700.network/test.txt`
+> `./4700ftp mv ftp://linppa:b4da98ea@ftp.4700.network/test.txt test-hello-move.txt`
 
 
 ## Design Strategies;

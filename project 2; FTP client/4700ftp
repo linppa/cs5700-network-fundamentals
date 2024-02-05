@@ -308,13 +308,9 @@ def handle_cp(client_socket, arguments):
     '''
     # need to download file from server RETR
     if arguments.param1.startswith('ftp://') and not arguments.param2.startswith('ftp://'):
-        ftp_url = arguments.param1
-        local_url = arguments.param2
         handle_retr(client_socket, arguments)
     # need to upload file to server STOR
     elif not arguments.param1.startswith('ftp://') and arguments.param2.startswith('ftp://'):
-        local_url = arguments.param1
-        ftp_url = arguments.param2
         handle_stor(client_socket, arguments)
     else:
         print("Invalid paths for cp operation.")
