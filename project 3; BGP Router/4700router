@@ -1,18 +1,193 @@
 #!/usr/bin/env -S python3 -u
 
-import argparse, socket, time, json, select, struct, sys, math
+import argparse, socket, json, select
 
+# ------------- IPConfig Class -------------
+class IPConfig:
+    '''
+    This class is responsible for handling all IP address configurations,
+    including CIDR, subnet masks, and binary notation.
+    '''
+
+    @staticmethod
+    def compare_prefixes(ip1, ip2):
+        '''
+        This function is responsible for comparing the given IP addresses.
+        Params:
+            @ip1: The first IP address
+            @ip2: The second IP address
+        Returns: True if the IP addresses are adjacent, False otherwise
+        '''
+        # Split the IP addresses into their quad components
+        quad1 = ip1.split('.')
+        quad2 = ip2.split('.')
+        
+        # Compare each quad component
+        for i in range(len(quad1)):
+            if quad1[i] != quad2[i]:
+                # Check if they are right next to each other
+                if abs(int(quad1[i]) - int(quad2[i])) == 1:
+                    return True
+                else:
+                    return False
+        # If all quads are identical, return True
+        return True
+
+    @staticmethod 
+    def converting_to_binary(address):
+        '''
+        This function is responsible for converting the given IP address
+        into its corresponding binary notation.
+        Params:
+            @address: The IP address to be converted
+        Returns: The converted IP address in binary notation
+        '''
+        # Split address into quads
+        subnet_split = address.split('.')
+        converted_address = ""
+
+        for i in subnet_split:
+            binary = ""
+            decimal = int(i)
+
+            while decimal > 0:
+                # Convert the decimal into binary
+                binary = str(decimal % 2) + binary
+                decimal = decimal // 2
+            # If binary number less than 8 bits, add leading zeros
+            binary = binary.zfill(8)
+            converted_address += str(binary)
+        return converted_address
+    
+    @staticmethod
+    def cidr_to_subnet_mask(cidr):
+        '''
+        This function is responsible for converting the given CIDR suffix into
+        its corresponding subnet mask.
+        Params:
+            @cidr: The CIDR suffix
+        Returns: The subnet mask
+        '''
+        # Check if the CIDR suffix is valid
+        if not 0 <= cidr <= 32:
+            raise ValueError("Prefix length must be between 0 and 32")
+        # Calculate the subnet mask
+        mask = 0xFFFFFFFF ^ (1 << (32 - cidr)) - 1
+        # Convert the mask to dotted-decimal notation
+        subnet_mask = []
+        for i in range(0, 32, 8):
+            subnet_mask.append(str((mask >> i) & 0xFF))
+        # Return the subnet mask
+        return ".".join(subnet_mask[::-1])
+    
+    @staticmethod
+    def converting_to_cidr(subnet_mask, ip_address):
+        '''
+        This function is responsible for converting given ip address, & subnet mask into
+        their corresponding CIDR notation.
+        Params:
+            @subnet_mask: The subnet mask of the ip address
+            @ip_address: The network IP address
+        Returns: The formatted CIDR address
+        '''
+        # Check if subnet mask in netmask notation
+        if isinstance(subnet_mask, int):
+            # If the subnet mask is in CIDR notation, return the CIDR address
+            return ip_address + "/" + str(subnet_mask)
+        elif '.' in subnet_mask:
+            # Find subnet mask CIDR prefix
+            converted_subnet = IPConfig.converting_to_binary(subnet_mask)
+            consecutive_ones = 0
+            # Count number of consecutive ones in subnet mask
+            for i in converted_subnet:
+                if i == '1':
+                    consecutive_ones += 1
+                else:
+                    break 
+            # Form CIDR address
+            CIDR_address = ip_address + "/" + str(consecutive_ones)
+            return CIDR_address
+    
+    @staticmethod
+    def compare_ips(ip1, ip2):
+        '''
+        This helper function is responsible for comparing the given IP addresses, and
+        returning the smaller IP address.
+        Params:
+            @ip1: The first IP address
+            @ip2: The second IP address
+        Returns: The IP address that is smaller
+        '''
+        # Split IP addresses into their components
+        ip1_address = ip1.split('/')[0]
+        ip2_address = ip2.split('/')[0]
+        # Split IP addresses into quad components
+        ip1_parts = ip1_address.split('.')
+        ip2_parts = ip2_address.split('.')
+        # Convert each part of IP address to integers
+        ip1_int = [int(part) for part in ip1_parts]
+        ip2_int = [int(part) for part in ip2_parts]
+        # Compare numerical values of the IP addresses
+        for i in range(4):
+            if ip1_int[i] > ip2_int[i]:
+                # Return the smallest ip address
+                return ip2
+            elif ip1_int[i] < ip2_int[i]:
+                # Return the smallest ip address
+                return ip1
+        
+    @staticmethod
+    def are_cidr_addresses_adjacent(network_cidr, matching_in_table ):
+        '''
+        This function is responsible for checking if the given CIDR addresses
+        are adjacent by comparing their binary notation and counting the number
+        of matching bits.
+        Params:
+            @network_cidr: The first CIDR address
+            @matching_in_table: The second CIDR address
+        Returns: The number of matching bits if the CIDR addresses are adjacent
+        '''
+        # Split the CIDR addresses into their components
+        network_cidr = network_cidr.split('/')[0]
+        matching_in_table = matching_in_table.split('/')[0]
+        # Convert the CIDR addresses into binary notation
+        prefix_with_masking_new_network_binary = IPConfig.converting_to_binary(network_cidr)
+        prefix_with_masking_network_binary = IPConfig.converting_to_binary(matching_in_table)
+        # Count the number of matching bits
+        matching_bits = 0
+        for bit1, bit2 in zip(prefix_with_masking_new_network_binary, prefix_with_masking_network_binary):
+            if bit1 != bit2:
+                break
+            matching_bits += 1
+        # Return the number of matching bits
+        return matching_bits
+
+# ------------- Router Class -------------
 class Router:
-
+    '''
+    This class is responsible for handling all BGP routing logic.
+    '''
     relations = {}
     sockets = {}
     ports = {}
+    
+    # maintain router's forwarding table & announcement cache
+    forwarding_table = {}
+    announcement_cache = []
+    create_new_table = False
 
     def __init__(self, asn, connections):
+        '''
+        This is the constructor for the Router class.
+        '''
         print("Router at AS %s starting up" % asn)
         self.asn = asn
+        self.connections = connections 
+        self.neighbors = []
+        
         for relationship in connections:
             port, neighbor, relation = relationship.split("-")
+            self.neighbors.append(neighbor)
 
             self.sockets[neighbor] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.sockets[neighbor].bind(('localhost', 0))
@@ -21,27 +196,636 @@ class Router:
             self.send(neighbor, json.dumps({ "type": "handshake", "src": self.our_addr(neighbor), "dst": neighbor, "msg": {}  }))
 
     def our_addr(self, dst):
+        '''
+        Modifies the given destination IP address into a new IP address with the
+        last quad set to 1, representing the router's address.
+        Params:
+            @dst: The destination IP address
+        Returns:
+            The modified IP address
+        '''
         quads = list(int(qdn) for qdn in dst.split('.'))
         quads[3] = 1
         return "%d.%d.%d.%d" % (quads[0], quads[1], quads[2], quads[3])
 
     def send(self, network, message):
+        '''
+        This function is responsible for sending a message to a specified to
+        network using the router's sockets.
+        Params:
+            @network: Is the destination network to send the message to
+            @message: Is the message to be sent to the destination network
+        '''
         self.sockets[network].sendto(message.encode('utf-8'), ('localhost', self.ports[network]))
 
     def run(self):
+        '''
+        This function is responsible for running the router and handling all the
+        incoming messages.
+        '''
         while True:
+            # Selects sockets that are ready for reading
             socks = select.select(self.sockets.values(), [], [], 0.1)[0]
+            # Iterates over the sockets that we know are ready for reading
             for conn in socks:
+                # Recieves message from the current socket.
+                # k = recieved data, addr = address of the sender
                 k, addr = conn.recvfrom(65535)
+                # Stores the source interface which the message was recieved
                 srcif = None
+                # Iterate through the sockets that are stored
                 for sock in self.sockets:
+                    # If the current socket is the same socket as the one which message was recieved
                     if self.sockets[sock] == conn:
+                        # If it is then the srcif = current socket 
                         srcif = sock
                         break
+                # Decodes the recieved message
                 msg = k.decode('utf-8')
-
+                # Print a message recieved message from the source interface
                 print("Received message '%s' from %s" % (msg, srcif))
+                
+                try:
+                    # Load the message into a json object
+                    msg = json.loads(msg)
+
+                    # Handle the message according to the message type
+                    self.handle_msg(msg, srcif)
+                    
+                except Exception as e:
+                    print('**ERROR** parsing message: %s' % e)
+    
+    def handle_msg(self, msg, srcif):
+        '''
+        This function takes messages recieved from the neighboring routers and
+        handles them accordingly. The message type is used to determine the
+        action to be taken.
+        Params:
+            @msg: The message recieved from the neighboring routers
+        '''
+        # parse the message type
+        msg_type = msg.get('type')
+
+        # handle msg accordingly
+        if msg_type == 'update':
+            self.handle_update(msg)
+        elif msg_type == 'withdraw':
+            self.handle_withdraw(msg)
+        elif msg_type == 'data':
+            self.handle_data(msg, srcif)
+        elif msg_type == 'dump':
+            self.handle_dump(msg)
+        else:
+            raise ValueError(f'Message type error: {msg_type}')
+   
+    def has_same_attributes(self, localpref, ASPath, origin, selfOrigin, matching_in_table):
+        '''
+        This function is responsible for checking if the given route
+        announcement has the same attributes as the existing entry in the
+        forwarding table. This is used to determine if the route announcement
+        can be aggregated.
+        Params:
+            @localpref: The local preference of the route announcement
+            @ASPath: The ASPath of the route announcement
+            @origin: The origin of the route announcement
+            @selfOrigin: Whether the route announcement was originated by the
+            router
+            @matching_in_table: The existing entry in the forwarding table
+        Returns: True if the route announcement has the same attributes as the
+        existing entry, False otherwise
+        '''
+        # Iterate through sources of the entry in forwarding table
+        for sources in self.forwarding_table[matching_in_table]:
+            for attributes in self.forwarding_table[matching_in_table][sources]:
+                # ensure attributes are the same
+                if self.forwarding_table[matching_in_table][sources]['localpref'] == localpref \
+                and self.forwarding_table[matching_in_table][sources]['ASPath'] == ASPath \
+                and self.forwarding_table[matching_in_table][sources]['origin'] == origin \
+                and self.forwarding_table[matching_in_table][sources]['SelfOrigin'] == selfOrigin:
+                    return True
+                else:
+                    return False
+
+    def handle_update(self, msg):
+        '''
+        This function handles the update message recieved from the neighboring
+        routers & updates the forwarding table of the router. This updated route
+        announcement is forwarded to all neighbors except the source.
+        Params:
+            @msg: The update message recieved from the neighboring routers
+        '''
+        # save a copy of this announcement
+        self.announcement_cache.append(msg)
+        
+        # extract msg portion of update announcement
+        msg_data = msg['msg']
+        peer = msg['src'] # source/peer/neighbor IP of announcement
+        dst = msg['dst'] # destination IP of announcement
+        # store network attributes
+        network_ip = msg_data['network']
+        
+        # convert network IP to CIDR notation
+        network_cidr = IPConfig.converting_to_cidr(msg_data['netmask'], network_ip)
+        netmask = msg_data['netmask']
+        localpref = msg_data['localpref']
+        ASPath = msg_data['ASPath']
+        origin = msg_data['origin']
+        selfOrigin = msg_data['selfOrigin']
+        relation = self.relations[peer]
+
+        # append router's ASN to front of ASPath
+        if self.asn not in ASPath:
+            ASPath.insert(0, self.asn)
+                 
+        # iterate through forwarding table to check if we can aggregate
+        for network, sources in self.forwarding_table.items():
+            # check if there are same hops
+            if peer in sources:
+                # if same hops, then we can see if can aggregate
+                if network_cidr != network:
+                    matching_in_table = network
+                    if self.has_same_attributes(localpref, ASPath, origin, selfOrigin, matching_in_table):
+                        # if same attributes, then we can aggregate
+                        CIDR_prefix = IPConfig.are_cidr_addresses_adjacent(network_cidr, matching_in_table)
+                        new_network = IPConfig.compare_ips(network_cidr, matching_in_table).split('/')[0]
+                        netmask = IPConfig.cidr_to_subnet_mask(CIDR_prefix)
+                        network_cidr = IPConfig.converting_to_cidr(CIDR_prefix, new_network)
+                        del self.forwarding_table[matching_in_table]
+                        break
+                    else:
+                        continue
+                else:
+                    break
+            else:
+                break
+        
+        # if network_cidr not in the paths of the forwarding table, add it
+        if network_cidr not in self.forwarding_table:
+            # FIRST LAYER of dict
+            self.forwarding_table[network_cidr] = {}
+        
+        # if peer/src isn't in the paths of the forwarding table, add it
+        if peer not in self.forwarding_table[network_cidr]:
+            # SECOND LAYER of dict
+            self.forwarding_table[network_cidr][peer] = {
+                'netmask': netmask,
+                'dst': dst,
+                'ASPath': ASPath,
+                'localpref': localpref,
+                'origin': origin,
+                'SelfOrigin': selfOrigin,
+                'relation': relation,
+                'network_ip': network_ip,
+            }
+        # formated print for debugging
+        print("**FORWARDING TABLE UPDATED**:\n" + json.dumps(self.forwarding_table, indent=2))
+
+        # handle forwarding update announcement
+        self.forward_update_announcement(msg)
         return
+
+    def forward_update_announcement(self, msg): 
+        '''
+        This function is responsible for forwarding the update announcement to
+        all neighbors except the source of the announcement.
+        Params:
+            @msg: The update announcement to be forwarded
+        '''      
+        msg_data = msg['msg']
+        src = msg['src'] # original source of announcement
+        network_ip = msg_data['network']
+         
+        for connection in self.connections:
+            port, cur_neighbor, cur_relation = connection.split("-")
+            # skip forwarding to source
+            if cur_neighbor == src:
+                continue
+            
+            # create update message to send
+            update_msg = {
+                'msg': {
+                    'netmask': msg_data['netmask'],
+                    'ASPath': msg_data['ASPath'],
+                    'network': network_ip,
+                },
+                # our address as the source of the announcement to be sent
+                'src': self.our_addr(cur_neighbor),
+                'dst': cur_neighbor,
+                'type': 'update'
+            }
+            # announced from customer, forward to all neighbors
+            if self.relations[src] == 'cust':
+                self.send(cur_neighbor, json.dumps(update_msg)) 
+            # announced from peer/provider, forward to customers only
+            elif self.relations[src] in ['peer', 'prov']:
+                if cur_relation == 'cust':
+                    self.send(cur_neighbor, json.dumps(update_msg))
+        return
+
+    def reconfigure_forwarding_table(self):
+        '''
+        This function is responsible for reconfiguring the forwarding table,
+        used when there are route withdrawals.
+        '''
+        # clear forwarding table
+        self.forwarding_table = {}
+        
+        # iterate through announcement cache to reconfigure forwarding table
+        for entry in self.announcement_cache:
+            if entry['type'] == 'update':
+                msg_data = entry['msg']
+                dst = entry['dst']
+                peer = entry['src']
+                network_ip = msg_data['network']             
+                netmask = msg_data['netmask']
+                localpref = msg_data['localpref']
+                ASPath = msg_data['ASPath']
+                origin = msg_data['origin']
+                selfOrigin = msg_data['selfOrigin']
+                relation = self.relations[peer]
+                network_cidr = IPConfig.converting_to_cidr(netmask, network_ip)
+                
+                # append router's ASN to front of ASPath
+                if self.asn not in ASPath:
+                    ASPath.insert(0, self.asn)
+                
+                # aggregation Logic
+                for existing_network in list(self.forwarding_table):
+                    for sources in self.forwarding_table[existing_network]:
+                        if peer in sources:
+                            if network_cidr != existing_network:
+                                if self.has_same_attributes(localpref, ASPath, origin, selfOrigin, existing_network) and IPConfig.compare_prefixes(network_cidr, existing_network) == True:
+                                    CIDR_prefix = IPConfig.are_cidr_addresses_adjacent(network_cidr, existing_network)
+                                    new_network = IPConfig.compare_ips(network_cidr, existing_network).split('/')[0]
+                                    netmask = IPConfig.cidr_to_subnet_mask(CIDR_prefix)
+                                    network_cidr = IPConfig.converting_to_cidr(CIDR_prefix, new_network)
+                                    del self.forwarding_table[existing_network]
+                                    break
+                                else:
+                                    break
+                            else:
+                                break
+                        else:
+                            break
+
+                if network_cidr not in self.forwarding_table:
+                    # FIRST LAYER of dict
+                    self.forwarding_table[network_cidr] = {}
+                
+                # if peer/src isnt in the paths of the forwarding table, add it
+                if peer not in self.forwarding_table[network_cidr]:
+                    # SECOND LAYER of dict
+                    self.forwarding_table[network_cidr][peer] = {
+                        'netmask': netmask,
+                        'dst': dst,
+                        'ASPath': ASPath,
+                        'localpref': localpref,
+                        'origin': origin,
+                        'SelfOrigin': selfOrigin,
+                        'relation': relation,
+                        'network_ip': network_ip,
+                    }
+                print("**FORWARDING TABLE UPDATED**:\n" + json.dumps(self.forwarding_table, indent=2))
+        return
+
+    def handle_withdraw(self, msg):
+        '''
+        This function is responsible for handling the withdrawal message
+        recieved from the neighboring routers. This function updates the
+        router's forwarding table and forwards the withdrawal message to all the
+        neighbors. If disaggretation is needed, the forwarding table is reconfigured.
+        Params:
+            @msg: The withdrawal message recieved 
+        '''
+        # Save a copy of this announcement
+        self.announcement_cache.append(msg)
+        # extract src
+        src = msg['src']
+        
+        # extract network and netmask
+        network_removal, netmask_removal = [(i['network'], i['netmask']) for i in msg['msg']][0]
+
+        for entry in self.forwarding_table:
+            ip_address = entry.split('/')[0]
+            # if network is in forwarding table
+            if ip_address in network_removal:
+                # iterate through src ip addresses of the entry
+                for j in self.forwarding_table[entry]:
+                    # if src ip is same as src of withdrawal message
+                    if j == src:
+                        # if netmask is same as netmask of withdrawal message
+                        if self.forwarding_table[entry][j]['netmask'] == netmask_removal:
+                            # remove the entry from the forwarding table
+                            del self.forwarding_table[entry][j]
+                            break
+            # if ip address isnt in forwarding table, check announcement cache
+            else:
+                    for i in self.announcement_cache:
+                        # Find matching update announcement in announcement cache that correlates with withdrawal statement
+                        if i['type'] == 'update':
+                            if i['src'] == src:
+                                # If the network & netmask are the same as withdrawal message
+                                if i['msg']['network'] in network_removal and i['msg']['netmask'] in netmask_removal:
+                                    self.announcement_cache.remove(i)
+                                    self.create_new_table = True
+                                # If need to reconfigure forwarding table
+                                if self.create_new_table:
+                                    self.reconfigure_forwarding_table()
+                                    self.create_new_table = False
+                                    break
+                            else:
+                                break
+        # handle forwarding withdrawal announcement to neighbors
+        for connection in self.connections:
+            _, neighbor, relation = connection.split("-")
+            if neighbor != msg['src']:
+                # if update recieved from a peer/provider, only send updates to customers
+                if relation == "peer" or relation == "prov":
+                    for entry in self.forwarding_table:
+                        for source in self.forwarding_table[entry]:
+                            # customers only
+                            if self.forwarding_table[entry][source]['relation'] == "cust": 
+                                # create withdrawal message to send
+                                withdraw_msg = {
+                                    'msg': msg['msg'],
+                                    # Put our IP address as the source of the announcement to be sent
+                                    'src': self.our_addr(neighbor),
+                                    # destination IP of the announcement, sending to our neighbor
+                                    'dst': neighbor,
+                                    'type': 'withdraw'
+                                }
+                                # print statements for debugging
+                                print("**FORWARDING TABLE UPDATED AFTER WITHDRAWAL**:\n" + json.dumps(self.forwarding_table, indent=1))
+                                self.send(neighbor, json.dumps(withdraw_msg))
+                # if update recieved from a customer, send updates to all neighbors
+                elif relation == "cust":
+                    withdraw_msg = {
+                        'msg': msg['msg'],
+                        # Put our IP address as the source of the announcement to be sent
+                        'src': self.our_addr(neighbor),
+                        # Destination IP of the announcement, sending to our neighbor
+                        'dst': neighbor,
+                        'type': 'withdraw'
+                    }
+                    # print statements for debugging
+                    print("**FORWARDING TABLE UPDATED AFTER WITHDRAWAL**:\n" + json.dumps(self.forwarding_table, indent=1))
+                    self.send(neighbor, json.dumps(withdraw_msg))
+        return
+    
+    def handle_data(self, msg, srcif):
+        '''
+        This function is responsible for handling the data message recieved from
+        the neighboring routers. The best route to the destination IP address is
+        found and the data message is forwarded to the best route. If there is
+        no best route, a no route message is sent to the source.
+        Params:
+            @msg: The data message recieved from the neighboring routers
+            @srcif: The source interface of the data message
+        '''
+        # extract dst & src from data message
+        dst = msg['dst']
+        src = msg['src']
+        
+        # find best routes to dst
+        best_routes = self.find_best_route(dst)
+        
+        # case where there is no best route
+        if not best_routes:
+            # send no route message
+            self.handle_no_route(src, dst)
+            return
+        
+        # case where there is more than one best route
+        elif len(best_routes) >= 1:
+            # tie breaker logic
+            selected_route = self.handle_tie_breaker(best_routes)
+            # check relation of source of message to selected route
+            src_relation = self.relations[srcif] if srcif in self.relations else None
+            
+            # if source of message is a customer or selected route is a customer
+            if src_relation == 'cust' or self.relations[selected_route['peer']] == 'cust':
+                # create the data message to be sent
+                data_msg = {
+                    'src': self.our_addr(src),
+                    'dst': selected_route['dst'],
+                    'type': 'data',
+                    'msg': msg['msg']
+                }
+                # send the data
+                self.send(selected_route['peer'], json.dumps(data_msg))
+            else:
+                self.handle_no_route(src, dst)
+        return
+
+    def find_best_route(self, dst):
+        '''
+        This function is responsible for finding the best route to the given
+        destination IP address.
+        Params:
+            @dst: The destination IP address
+        Returns: A list of the best routes to the destination IP address
+        '''
+        # convert destination IP to binary
+        dst_binary = IPConfig.converting_to_binary(dst)
+        # initialize variables to store best routes & longest prefix match
+        best_routes = []
+        longest_prefix_match = -1
+        
+        # iterate through forwarding table to get entry and details
+        for entry, details in self.forwarding_table.items():
+            # iterate through the src ip addresses of the entry and their attributes
+            for peer, attributes in details.items():
+                # convert network IP and netmask to binary
+                network_binary = IPConfig.converting_to_binary(attributes['network_ip'])
+                netmask_binary = IPConfig.converting_to_binary(attributes['netmask'])
+                # perform bitwise AND operation
+                mask_result = format(int(network_binary, 2) & int(netmask_binary, 2), '032b')
+                
+                # counter to keep track of matching bits
+                count_matching_bits = 0
+                
+                # iterate through the mask result & destination binary to find matching bits
+                for i in range(min(len(mask_result), len(dst_binary))):
+                    if mask_result[i] == dst_binary[i]:
+                        count_matching_bits += 1
+                    else:
+                        # no more matching bits
+                        break
+                # for each peer, check if the count of matching bits is greater than the longest prefix match
+                # if it is, update the longest prefix match and best routes
+                if count_matching_bits > longest_prefix_match:
+                    longest_prefix_match = count_matching_bits
+                    best_routes = [{'peer': peer, 'dst': attributes['network_ip'], 'localpref': attributes['localpref'], 'selfOrigin': attributes['SelfOrigin'], 'ASPath': attributes['ASPath'], 'origin': attributes['origin'], 'network_ip': attributes['network_ip']}]
+                # if the count of matching bits is equal to the longest prefix match, append to best routes
+                # since it is still considered a best route
+                elif count_matching_bits == longest_prefix_match:
+                    best_routes.append({'peer': peer, 'dst': attributes['network_ip'], 'localpref': attributes['localpref'], 'selfOrigin': attributes['SelfOrigin'], 'ASPath': attributes['ASPath'], 'origin': attributes['origin'], 'network_ip': attributes['network_ip']})
+        return best_routes
+
+    def handle_tie_breaker(self, best_routes):
+        '''
+        This function is responsible for breaking ties between the best routes
+        to a destination IP address.
+        Params:
+            @best_routes: A list of the best routes to the destination IP address
+        Returns: The selected route after the tie is broken
+        '''
+        # ------------- tie breaker highest local pref -------------
+        # initialize variables to store highest localpref and route of tie winner
+        route_tie_winner = []
+        highest_localpref = -1
+        for route in best_routes:
+            # if localpref is greater than current highest localpref
+            if route['localpref'] > highest_localpref:
+                # update highest localpref and make route the tie winner
+                highest_localpref = route['localpref']
+                route_tie_winner = [route]
+            # if there is a tie for highest localpref, append route to tie winner list
+            if route['localpref'] == highest_localpref:
+                route_tie_winner.append(route)
+        # add all routes with the highest localpref to best routes
+        best_routes = route_tie_winner
+        
+        # ------------- tie breaker selfOrigin -------------
+        # reset variables to store route of new tie winner
+        route_tie_winner = []
+        # if there is more than one route to tie break
+        if len(best_routes) > 1:
+            for route in best_routes:
+                # if route selfOrigin is True, make route the tie winner
+                if route['selfOrigin'] == True:
+                    route_tie_winner.append(route)
+                if len(route_tie_winner) > 0:
+                    best_routes = route_tie_winner
+
+            # ------------- tie breaker shortest ASPath -------------
+            # reset variables to store route of new tie winner
+            route_tie_winner = []      
+            # if there is more than one route to tie break
+            if len(best_routes) > 1:
+                # initialize variable to store shortest ASPath, select first route
+                shortest_aspath = len(best_routes[0]['ASPath'])
+                for route in best_routes:
+                    # route with shortest ASPath is the tie winner
+                    if len(route['ASPath']) < shortest_aspath:
+                        shortest_aspath = len(route['ASPath'])
+                        route_tie_winner = [route]
+                    # if there is a tie for shortest ASPath, append route to tie winner list
+                    if len(route['ASPath']) == shortest_aspath:
+                        route_tie_winner.append(route)
+                # add all routes with the shortest ASPath to best routes
+                best_routes = route_tie_winner
+                
+                # ----------- tie breaker highest origin preference IGP > EGP > UNK ------------
+                # reset variables to store route of new tie winner
+                route_tie_winner = []
+                # if there is more than one route to tie break
+                if len(best_routes) > 1:
+                    for route in best_routes:
+                        # if origin is IGP, make route the tie winner
+                        if route['origin'] == 'IGP':
+                            route_tie_winner.append(route)
+                    # if there is no IGP in routes to consider, break tie using EGP
+                    if route_tie_winner == []:
+                        for route in best_routes:
+                            # if origin is EGP, make route the tie winner
+                            if route['origin'] == 'EGP':
+                                route_tie_winner.append(route)
+                    # if there is no IGP or EGP in routes to consider, break tie using UNK
+                    if route_tie_winner == []:
+                        for route in best_routes:
+                            # if origin is UNK, make route the tie winner
+                            if route['origin'] == 'UNK':
+                                route_tie_winner.append(route)
+                    # add all routes with the highest origin preference to best routes
+                    best_routes = route_tie_winner
+                    
+                    # ----------- tie breaker lowest network IP address ------------
+                    # reset variables to store route of new tie winner
+                    route_tie_winner = []
+                    # if there is more than one route to tie break
+                    if len(best_routes) > 1:
+                        # select arbitrary first route to tie break, converted to binary
+                        lowest_network_ip = IPConfig.converting_to_binary(best_routes[0]['peer'])
+                        lowest_network_ip = int(lowest_network_ip, 2)
+                        route_tie_winner = [best_routes[0]]
+                        for route in best_routes:
+                            # convert network IP to binary
+                            network_ip = IPConfig.converting_to_binary(route['peer'])
+                            network_ip = int(network_ip, 2)
+                            # if network IP is less than current lowest network IP, make route the tie winner
+                            if network_ip < lowest_network_ip:
+                                lowest_network_ip = network_ip
+                                route_tie_winner = [route]
+                        best_routes = route_tie_winner
+                        return best_routes[0]
+        # if there is still a tie, return first best route in list
+        if len(route_tie_winner) > 0:
+            return route_tie_winner[0]
+        else:
+            print(f"**TIE-BREAKER ERROR**: No route found")           
+        # return tie-breaker
+        return best_routes[0]
+
+    def handle_no_route(self, src, dst):
+        '''
+        This function is responsible for handling the case when there is no
+        route to the destination IP address.
+        Params:
+            @src: The source IP address
+            @dst: The destination IP address
+        '''
+        # create no route message to send
+        no_route_msg = {
+            'src': self.our_addr(src),
+            'dst': dst,
+            'type': 'no_route',
+            'msg': {"error": "No route found"}
+        }
+        self.send(src, json.dumps(no_route_msg))
+        print(f"**NO ROUTE SENT**: {json.dumps(no_route_msg, indent=2)}")
+
+    def handle_dump(self, msg):
+        '''
+        This function is responsible for handling the dump message recieved from
+        the neighboring routers. The routing table is dumped and sent back to
+        the source of the dump request.
+        Params:
+            @msg: The dump message recieved from the neighboring routers
+        '''
+        # extract src from dump message
+        src = msg['src']
+        # list to store routing table entries
+        table_entries = []
+        
+        # iterate through forwarding table to get entry and details
+        for network_cidr, peers in self.forwarding_table.items():
+            for peer, details in peers.items():
+                # make a copy of the ASPath to avoid modifying the original
+                copy_aspath = details['ASPath'][:]
+                # if the router's ASN is in the ASPath, remove it
+                if copy_aspath and copy_aspath[0] == self.asn:
+                    copy_aspath.pop(0)
+                # create entry to add to table entries
+                entry = {
+                    'network': network_cidr.split('/')[0],
+                    'netmask': details['netmask'],
+                    'origin': details['origin'], 
+                    'localpref': details['localpref'],
+                    'ASPath': copy_aspath,
+                    'peer': peer,
+                    'selfOrigin': details['SelfOrigin'],
+                }
+                table_entries.append(entry)
+        # create dump message to send
+        dump_msg = {
+            'src': self.our_addr(src),
+            'dst': src,
+            'type': 'table',
+            'msg': table_entries
+        }
+        # send the dump message back to the source
+        self.send(src, json.dumps(dump_msg))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='route packets')
