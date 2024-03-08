@@ -1,10 +1,13 @@
 #!/usr/bin/env -S python3 -u
 
-import argparse, socket, time, json, select, struct, sys, math
+import argparse, socket, time, json, select, sys
 
 # ----- RECEIVER CLASS -----
 class Receiver:
     def __init__(self):
+        '''
+        Constructor for the Receiver class.
+        '''
         # create UDP socket, bind to any available IP & port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind(('0.0.0.0', 0))
@@ -25,10 +28,22 @@ class Receiver:
         
 
     def send(self, message):
+        '''
+        Sends a message to the remote host.
+
+        Args:
+            message (dict): The message to send.
+        '''
         self.socket.sendto(json.dumps(message).encode('utf-8'), (self.remote_host, self.remote_port))
 
 
     def log(self, message):
+        '''
+        Logs a message to stderr.
+
+        Args:
+            message (str): The message to log.
+        '''
         sys.stderr.write(message + "\n")
         sys.stderr.flush()
 
@@ -68,6 +83,12 @@ class Receiver:
                 
 
     def run(self):
+        '''
+        Main loop for the receiver. This function listens for incoming packets,
+        and sends acknowledgements for each packet received. It prints the
+        packets in the correct order & drops corrupted packets with an incorrect
+        checksum.
+        '''
         while True:
             socks = select.select([self.socket], [], [])[0]
             for conn in socks:
@@ -77,19 +98,40 @@ class Receiver:
                     self.remote_host = addr[0]
                     self.remote_port = addr[1]
 
-                msg = json.loads(data.decode('utf-8'))
-                # log received data message for debugging
-                self.log(f"**Received ack**; {msg['sequence']}")
+                # if no data, skip
+                if not data:
+                    continue
+                
+                # attempt to decode the data, if it fails, skip
+                try:
+                    msg = json.loads(data.decode('utf-8'))
+                except json.JSONDecodeError as e:
+                    self.log(f"**json error**; {e}")
+                    continue
 
-                # if the packet seq num isnt in already in the ack_messages we've saved, then store the entire message
-                # we will hang on to thess messages until we can print it to stdout in the correct order
-                if msg["sequence"] not in self.ack_messages.keys():
-                    # store the entire message to print at the end
-                    self.ack_messages[msg["sequence"]] = msg
+                # calculate checksum of received packet to compare with expected checksum
+                received_checksum = sum(bytearray(msg["data"].encode('utf-8'))) % 256
 
-                # send ack of sequence number to sender immediately, so sender can keep sending more packets
-                self.send({ "type": "ack", "sequence": msg["sequence"] })
-                self.log(f"**Sending ack**; {msg['sequence']}")
+                # verify checksum of received packet
+                if received_checksum == msg["checksum"]:
+                    # log received data message for verified packet
+                    self.log(f"**Received ack**; {msg['sequence']}")
+
+
+                    # if the packet seq num isnt in already in the ack_messages we've saved, then store the entire message
+                    # we will hang on to thess messages until we can print it to stdout in the correct order
+                    if msg["sequence"] not in self.ack_messages.keys():
+                        # store the entire message to print at the end
+                        self.ack_messages[msg["sequence"]] = msg
+
+                    # send ack of sequence number to sender immediately, so sender can keep sending more packets
+                    self.send({ "type": "ack", "sequence": msg["sequence"] })
+                    self.log(f"**Sending ack**; {msg['sequence']}")
+                
+                else:
+                    # log received data message for corrupted packet & skip
+                    self.log(f"**Received corrupted ack**; {msg['sequence']}")
+                    continue
                     
                 # sort the ack messages dict by sequence number, to order the packets, updates self.ack_messages
                 self.sort_ack_messages()

@@ -1,6 +1,6 @@
 #!/usr/bin/env -S python3 -u
 
-import argparse, socket, time, json, select, struct, sys, math
+import argparse, socket, time, json, select, sys
 
 DATA_SIZE = 1375
 
@@ -9,9 +9,10 @@ class Sender:
     def __init__(self, host, port):
         ''''
         Constructor for the Sender class.
-        Params:
-            @host: string of the remote host to connect to
-            @port: integer of the UDP port number to connect to
+        
+        Args:
+            host (str): The remote host to connect to.
+            port (int): The UDP port number to connect to.
         '''
         self.host = host
         self.remote_port = int(port)
@@ -44,9 +45,10 @@ class Sender:
 
     def log(self, message):
         '''
-        This function is used to log a message to stderr.
-        Params:
-            @message: string of the message to log
+        Logs a message to stderr.
+
+        Args:
+            message (str): The message to log.
         '''
         sys.stderr.write(message + "\n") 
         sys.stderr.flush()
@@ -54,21 +56,29 @@ class Sender:
 
     def send_complex(self, data, sequence_number):
         '''
-        This function sends a complete message. After sending, the message is
+        This function sends a complete message with a checksum to detect
+        corruption of the packet. After sending, the message is
         added to the outstanding packets list & logs the message being sent.
-        Params:
-            @data: string of the data
-            @sequence_number: integer of the sequence number
+        
+        Args:
+            data (str): The data to send.
+            sequence_number (int): The sequence number of the packet.
         '''
-        message = {"type": "msg", 
-                   "sequence": sequence_number, 
-                   "data": data, 
-                   "time": time.time()}
+        # calculate checksum to detect corruption
+        checksum = sum(bytearray(data.encode('utf-8'))) % 256
+
+        message = {
+            "type": "msg", 
+            "sequence": sequence_number, 
+            "data": data, 
+            "time": time.time(),
+            "checksum": checksum
+        }
         # track the outstanding packets sent
         self.outstanding_packets[sequence_number] = message
         # send the packet to the remote host and port
         self.socket.sendto(json.dumps(message).encode('utf-8'), (self.host, self.remote_port))
-        self.log(f"**Sending packet**; {sequence_number}")
+        self.log(f"**Sending packet**; {sequence_number}; checksum: {checksum}")
 
     
     def ack_received(self, ack_sequence_number):
@@ -76,8 +86,8 @@ class Sender:
         When an acknowledgement is received, this function is called to adjust
         the round trip time and retransmission timeout. 
 
-        Params:
-            @ack_sequence_number: integer of the sequence number
+        Args:
+            ack_sequence_number (int): The sequence number of the packet that was acknowledged.
         '''
         if ack_sequence_number in self.outstanding_packets:
             # adjust round trip time based on ack received; NOTE: transport ptt, slide 43 for formula
@@ -99,6 +109,10 @@ class Sender:
 
 
     def run(self):
+        '''
+        Runs the sender. This function will send data to the receiver, and
+        handle acknowledgements and retransmission timeouts.
+        '''
         while True:
             # obtain list of sockets ready for reading from either the socket or standard input
             sockets = [self.socket, sys.stdin] if not self.waiting else [self.socket]
@@ -109,8 +123,18 @@ class Sender:
                 # ----- SOCKET -----
                 if conn == self.socket:
                     data, addr = conn.recvfrom(65535)
-                    msg = data.decode('utf-8')
-                    ack = json.loads(msg)
+
+                    # if no data, skip
+                    if not data:
+                        continue
+                    # attempt to decode the data, if it fails, skip
+                    try:
+                        msg = data.decode('utf-8')
+                        ack = json.loads(msg)
+                    except json.JSONDecodeError as e:
+                        self.log(f"**json error**; {e}")
+                        continue
+
                     # call the ack_received function to handle the ack;
                     # will adjust rtt, rto, and congestion window, & removes the acked packet from outstanding packets list
                     self.ack_received(ack["sequence"])  
