@@ -1,0 +1,167 @@
+#!/usr/bin/env -S python3 -u
+
+import argparse, socket, time, json, select, struct, sys, math
+
+DATA_SIZE = 1375
+
+# ----- SENDER CLASS -----
+class Sender:
+    def __init__(self, host, port):
+        ''''
+        Constructor for the Sender class.
+        Params:
+            @host: string of the remote host to connect to
+            @port: integer of the UDP port number to connect to
+        '''
+        self.host = host
+        self.remote_port = int(port)
+        self.log("Sender starting up using port %s" % self.remote_port)
+
+        # create UDP socket, bind to any available IP & port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.bind(('0.0.0.0', 0))
+        # wait for incoming data
+        self.waiting = False
+        
+        # ----- SENDER VARIABLES -----
+        # packets sent but not yet acknowledged
+        self.outstanding_packets = {}
+        # advertised window size
+        self.adv_wnd = 4
+        # stamp each packet with a seq num
+        self.sequence_number = 0
+
+        # ----- CONGESTION CONTROL VARIABLES -----
+        # congestion window; NOTE: congest contr, slide 22-23
+        self.cwnd = 1
+        # slow start threshold, initially set to advertised window size
+        self.ssthresh = self.adv_wnd
+        # round trip time
+        self.rtt = 1
+        # retransmission timeout; NOTE: transport ptt, slide 43
+        self.rto = self.rtt * 2
+
+
+    def log(self, message):
+        '''
+        This function is used to log a message to stderr.
+        Params:
+            @message: string of the message to log
+        '''
+        sys.stderr.write(message + "\n") 
+        sys.stderr.flush()
+
+
+    def send_complex(self, data, sequence_number):
+        '''
+        This function sends a complete message. After sending, the message is
+        added to the outstanding packets list & logs the message being sent.
+        Params:
+            @data: string of the data
+            @sequence_number: integer of the sequence number
+        '''
+        message = {"type": "msg", 
+                   "sequence": sequence_number, 
+                   "data": data, 
+                   "time": time.time()}
+        # track the outstanding packets sent
+        self.outstanding_packets[sequence_number] = message
+        # send the packet to the remote host and port
+        self.socket.sendto(json.dumps(message).encode('utf-8'), (self.host, self.remote_port))
+        self.log(f"**Sending packet**; {sequence_number}")
+
+    
+    def ack_received(self, ack_sequence_number):
+        '''
+        When an acknowledgement is received, this function is called to adjust
+        the round trip time and retransmission timeout. 
+
+        Params:
+            @ack_sequence_number: integer of the sequence number
+        '''
+        if ack_sequence_number in self.outstanding_packets:
+            # adjust round trip time based on ack received; NOTE: transport ptt, slide 43 for formula
+            send_time = self.outstanding_packets[ack_sequence_number]["time"]
+            self.rtt = (0.875 * self.rtt) + (0.125 * (time.time() - send_time))
+            # adjust retransmission timeout based on rtt
+            self.rto = self.rtt * 2
+
+            # adjust congestion window based on slow start or congestion avoidance
+            if self.cwnd < self.ssthresh:
+                # slow start phase
+                self.cwnd *= 2 
+            else: # self.cwnd >= self.ssthresh
+                # congestion avoidance phase; NOTE: cong contr, slide 25
+                self.cwnd += 1
+            
+            # remove the acked packet from the outstanding packets list
+            del self.outstanding_packets[ack_sequence_number]
+
+
+    def run(self):
+        while True:
+            # obtain list of sockets ready for reading from either the socket or standard input
+            sockets = [self.socket, sys.stdin] if not self.waiting else [self.socket]
+            # select first socket with incoming data, timeout of 0.1 seconds
+            socks = select.select(sockets, [], [], 0.1)[0]
+            
+            for conn in socks:
+                # ----- SOCKET -----
+                if conn == self.socket:
+                    data, addr = conn.recvfrom(65535)
+                    msg = data.decode('utf-8')
+                    ack = json.loads(msg)
+                    # call the ack_received function to handle the ack;
+                    # will adjust rtt, rto, and congestion window, & removes the acked packet from outstanding packets list
+                    self.ack_received(ack["sequence"])  
+
+                    # log for debugging, so doesn't affect print output
+                    self.log(f"**Received ack**; {ack['sequence']}")
+                    self.log(f"**cwnd**; {self.cwnd}")
+                    self.log(f"**ssthresh**; {self.ssthresh}")
+                    self.log(f"**rtt**; {self.rtt}")
+                    self.log(f"**rto**; {self.rto}")
+                    self.log(f"**outstanding_packets**; {self.outstanding_packets}")
+
+                elif conn == sys.stdin:
+                    # ----- STANDARD INPUT -----
+                    if len(self.outstanding_packets) < self.cwnd:
+                        # read data from standard input
+                        data = sys.stdin.read(DATA_SIZE)
+
+                        # there is data to send
+                        if data:
+                            # sends packets to the receiver & tracks packets sent into outstanding packets list
+                            self.send_complex(data, self.sequence_number)
+                            # track next sequence number
+                            self.sequence_number += 1
+
+                        # there is no more data to send, exit  
+                        if len(data) == 0:
+                            # all data has been sent & all ACKs received
+                            if not self.outstanding_packets:
+                                self.log("All done!")
+                                return
+
+            # ----- RETRANSMISSION TIMEOUT -----
+            # set timer to track time
+            start = time.time()
+            
+            for sequence, packet in self.outstanding_packets.items():
+                # if the packet has been waiting for too long, retransmit it
+                if (start - packet["time"]) > self.rto:
+                    self.log(f"**Timed out**; {sequence}")
+                    # retransmit the packet
+                    self.send_complex(packet["data"], sequence)
+                    # reduce slow start threshold; NOTE: cong contr, slide 27
+                    self.ssthresh = self.cwnd / 2
+                    self.cwnd = 1
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='send data')
+    parser.add_argument('host', type=str, help="Remote host to connect to")
+    parser.add_argument('port', type=int, help="UDP port number to connect to")
+    args = parser.parse_args()
+    sender = Sender(args.host, args.port)
+    sender.run()

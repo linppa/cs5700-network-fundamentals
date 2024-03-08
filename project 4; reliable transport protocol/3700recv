@@ -1,0 +1,112 @@
+#!/usr/bin/env -S python3 -u
+
+import argparse, socket, time, json, select, struct, sys, math
+
+# ----- RECEIVER CLASS -----
+class Receiver:
+    def __init__(self):
+        # create UDP socket, bind to any available IP & port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.bind(('0.0.0.0', 0))
+        self.port = self.socket.getsockname()[1]
+        self.log("Bound to port %d" % self.port)
+
+        self.remote_host = None
+        self.remote_port = None
+
+        # ----- RECEIVER VARIABLES -----
+        # save acknowledged packets so we know what has finished being handled
+        self.sequences_acknowledged = []
+        # seq num counter to figure out next packet to print to stdout
+        # assuming packets start at number 0 when sender sends it
+        self.expected_seq_num = 0
+        # store all ack messages in case packets are out of order, and need to print at the very end
+        self.ack_messages = {}
+        
+
+    def send(self, message):
+        self.socket.sendto(json.dumps(message).encode('utf-8'), (self.remote_host, self.remote_port))
+
+
+    def log(self, message):
+        sys.stderr.write(message + "\n")
+        sys.stderr.flush()
+
+
+    def sort_ack_messages(self):
+        '''
+        Sorts the acknolwedgment messages by sequence number, and orders the packets
+        in the correct order. Serves as a cache to store all packets until they
+        can be printed in the correct order.
+        '''
+        sorted_ack_messages = {}
+        # sort the ack messages dict by sequence number, to order the packets; key = sequence number
+        sorted_keys = sorted(self.ack_messages.keys())
+        # iterate thru sorted seq nums, & store the entire message to print later
+        for key in sorted_keys:
+            sorted_ack_messages[key] = self.ack_messages[key]
+        self.ack_messages = sorted_ack_messages
+
+
+    def print_ordered_packets(self):
+        '''
+        Iterates through the sorted acknowledgment messages, and prints the
+        packets in the correct order. By using the variable expected_seq_num, we
+        can print the packets in the correct order starting from 0 and
+        incrementing as we receive more packets. Printed/delivered packets are
+        stored in the sequences_acknowledged list to later delete.
+        '''
+        # iterate through each entry in the ack_messages dict,
+        # starting from expected seq num of 0, we will print it, and increment for the next expected seq num (0, 1, ..., etc)
+        # so the packets are printed in correct order
+        for key, value in self.ack_messages.items():
+            if key == self.expected_seq_num:
+                print(value["data"], end='', flush=True)
+                self.expected_seq_num += 1
+                # we've printed the packet, so it has been acknowledged & delivered
+                self.sequences_acknowledged.append(key)
+                
+
+    def run(self):
+        while True:
+            socks = select.select([self.socket], [], [])[0]
+            for conn in socks:
+                data, addr = conn.recvfrom(65535)
+
+                if self.remote_host is None:
+                    self.remote_host = addr[0]
+                    self.remote_port = addr[1]
+
+                msg = json.loads(data.decode('utf-8'))
+                # log received data message for debugging
+                self.log(f"**Received ack**; {msg['sequence']}")
+
+                # if the packet seq num isnt in already in the ack_messages we've saved, then store the entire message
+                # we will hang on to thess messages until we can print it to stdout in the correct order
+                if msg["sequence"] not in self.ack_messages.keys():
+                    # store the entire message to print at the end
+                    self.ack_messages[msg["sequence"]] = msg
+
+                # send ack of sequence number to sender immediately, so sender can keep sending more packets
+                self.send({ "type": "ack", "sequence": msg["sequence"] })
+                self.log(f"**Sending ack**; {msg['sequence']}")
+                    
+                # sort the ack messages dict by sequence number, to order the packets, updates self.ack_messages
+                self.sort_ack_messages()
+
+                # iterate through the ack_messages dict, and print the packets in order
+                self.print_ordered_packets()
+                
+                # delete the ack messages that have been printed, & clear the sequences_acknowledged list
+                # so it doesnt get reprinted
+                for sequences in self.sequences_acknowledged:
+                    del self.ack_messages[sequences]
+                self.sequences_acknowledged = []
+        return
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='receive data')
+    args = parser.parse_args()
+    receiver = Receiver()
+    receiver.run()
