@@ -49,6 +49,11 @@ The command line syntax for the receiving program is given below.
   following the tips & hints provided by the professor in the "implementation
   strategy" section of the assignment description.
 
+- After completing the basics of the project, I attempted to look at the struct
+  module, however could not quite figure out how to use it. I ended up trying to
+  shave off bytes from the packet size by using smaller variable names and
+  attempted to increase the cwnd size up to 10.
+
 
 ## Challenges:
 - The biggest challenge was figuring out how to design a packet format that

@@ -113,24 +113,24 @@ class Receiver:
                 received_checksum = sum(bytearray(msg["data"].encode('utf-8'))) % 256
 
                 # verify checksum of received packet
-                if received_checksum == msg["checksum"]:
+                if received_checksum == msg["chs"]:
                     # log received data message for verified packet
-                    self.log(f"**Received ack**; {msg['sequence']}")
+                    self.log(f"**Received ack**; {msg['seq']}")
 
 
                     # if the packet seq num isnt in already in the ack_messages we've saved, then store the entire message
                     # we will hang on to thess messages until we can print it to stdout in the correct order
-                    if msg["sequence"] not in self.ack_messages.keys():
+                    if msg["seq"] not in self.ack_messages.keys():
                         # store the entire message to print at the end
-                        self.ack_messages[msg["sequence"]] = msg
+                        self.ack_messages[msg["seq"]] = msg
 
                     # send ack of sequence number to sender immediately, so sender can keep sending more packets
-                    self.send({ "type": "ack", "sequence": msg["sequence"] })
-                    self.log(f"**Sending ack**; {msg['sequence']}")
+                    self.send({ "type": "ack", "seq": msg["seq"] })
+                    self.log(f"**Sending ack**; {msg['seq']}")
                 
                 else:
                     # log received data message for corrupted packet & skip
-                    self.log(f"**Received corrupted ack**; {msg['sequence']}")
+                    self.log(f"**Received corrupted ack**; {msg['seq']}")
                     continue
                     
                 # sort the ack messages dict by sequence number, to order the packets, updates self.ack_messages
