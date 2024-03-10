@@ -4,6 +4,7 @@
 
 import argparse
 import socket
+import ssl
 
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
@@ -15,17 +16,37 @@ class Crawler:
         self.username = args.username
         self.password = args.password
 
+        # TODO: track the frontier; store uncrawled url in queue, stack, or list
+        # TODO: track the history; store crawled url
+        # TODO: only crawl target domain
+
     def run(self):
+        # TODO: HTTP/1.1; supports chunked encoding
+        # TODO: headers; host, 'connection: keep-alive' tricky to get correct, 'accept-encoding: gzip'
         request = "GET / HTTP/1.0\r\n\r\n"
 
         print("Request to %s:%d" % (self.server, self.port))
         print(request)
+        
+        # create my socket
         mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         mysocket.connect((self.server, self.port))
+
+        # TODO: implement TLS
+
+        # send the request
         mysocket.send(request.encode('ascii'))
 
         data = mysocket.recv(1000)
         print("Response:\n%s" % data.decode('ascii'))
+
+        # TODO: HTTP protocol aspects; GET, POST, store cookies + submit with GET request
+        # TODO: handle status codes; 
+            # 200 - OK
+            # 302 - Found
+            # 403 - Forbidden & 404 - Not Found
+            # 503 - Service Unavailable - retry request until successful
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='crawl Fakebook')
