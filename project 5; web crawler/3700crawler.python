@@ -22,8 +22,8 @@ class Crawler:
 
     def run(self):
         # TODO: HTTP/1.1; supports chunked encoding
-        # TODO: headers; host, 'connection: keep-alive' tricky to get correct, 'accept-encoding: gzip'
-        request = "GET / HTTP/1.0\r\n\r\n"
+        # TODO: 'connection: keep-alive' tricky to get correct, 'accept-encoding: gzip'
+        request = "GET /accounts/login/?next=/fakebook/ HTTP/1.1\r\nHost: proj5.3700.network\r\n\r\n"
 
         print("Request to %s:%d" % (self.server, self.port))
         print(request)
@@ -32,13 +32,20 @@ class Crawler:
         mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         mysocket.connect((self.server, self.port))
 
-        # TODO: implement TLS
+        # implement TLS encryption
+        tls_encrypt = ssl.create_default_context()
+        mysocket = tls_encrypt.wrap_socket(mysocket, server_hostname=self.server)
 
         # send the request
         mysocket.send(request.encode('ascii'))
 
-        data = mysocket.recv(1000)
-        print("Response:\n%s" % data.decode('ascii'))
+        # receive the full html response
+        data = mysocket.recv(1000).decode('ascii')
+        while '</html>' not in data:
+            if not data:
+                break
+            data += mysocket.recv(1000).decode('ascii')
+        print(f'** full response; **\n{data}')
 
         # TODO: HTTP protocol aspects; GET, POST, store cookies + submit with GET request
         # TODO: handle status codes; 
