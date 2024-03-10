@@ -1,6 +1,6 @@
 #!/usr/bin/env -S python3 -u
 
-import argparse, socket, time, json, select, sys, struct, base64
+import argparse, socket, time, json, select, sys, struct, base64, zlib
 
 DATA_SIZE = 1375
 
@@ -66,6 +66,10 @@ class Sender:
             data (str): The data to send.
             sequence_number (int): The sequence number of the packet.
         '''
+        # compress data with zlib, encode with base64 (to be json compatible), & decode to utf-8
+        compressed_data = zlib.compress(data.encode('utf-8'), level=9)
+        compressed_data = base64.b64encode(compressed_data).decode('utf-8')
+
         # calculate checksum to detect corruption
         checksum = sum(bytearray(data.encode('utf-8'))) % 256
         current_time = time.time()
@@ -77,7 +81,7 @@ class Sender:
 
         # packed data message to send
         message = {
-            "data": data, 
+            "data": compressed_data,
             "pckd": packed_data
         }
         # detailed message to track outstanding packets

@@ -50,9 +50,14 @@ The command line syntax for the receiving program is given below.
   strategy" section of the assignment description.
 
 - After completing the basics of the project, I attempted to look at the struct
-  module, however could not quite figure out how to use it. I ended up trying to
-  shave off bytes from the packet size by using smaller variable names and
+  module, to attempts to minimize the byte size of data being sent. I also tried
+  to shave off bytes from the packet size by using smaller variable names and
   attempted to increase the cwnd size up to 10.
+
+- Since the deadline was extended, I was able to play with zlib and base64 with
+  the struct module to encode and decode the packet to even further minimize the
+  byte size of the packet. It was a good learning experience to play around with
+  these modules, but I'm not sure if I fully implemented it correctly.
 
 
 ## Challenges:
@@ -76,8 +81,10 @@ The command line syntax for the receiving program is given below.
   mutal situation since it was difficult for us to fully learn about the
   protocol without implementing the project from start to finish.
 
-- I attempted to play around with struct and base64 to encode and decode the
-  packet, but I'm not sure if I fully implemented it correctly. 
+- Trying to figure out how to compress the data was a challenge since Struct
+  only works with fixed-size data, such as the sequence number, time, and
+  checksum. The actual data block was a variable size, so I had to figure out
+  how to compress it. 
 
 
 ## Testing:
@@ -93,4 +100,7 @@ The command line syntax for the receiving program is given below.
 > https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings
 > https://docs.python.org/3/library/struct.html#struct-format-strings
 > https://docs.python.org/3/library/base64.html
+> https://stackoverflow.com/questions/52081331/trying-to-print-out-json-from-a-decoded-base64-python
+> https://docs.python.org/3/library/zlib.html
+
 

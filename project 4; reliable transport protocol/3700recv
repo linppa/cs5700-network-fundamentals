@@ -1,6 +1,6 @@
 #!/usr/bin/env -S python3 -u
 
-import argparse, socket, time, json, select, sys, struct, base64
+import argparse, socket, time, json, select, sys, struct, base64, zlib
 
 # ----- RECEIVER CLASS -----
 class Receiver:
@@ -105,13 +105,26 @@ class Receiver:
                 # attempt to decode the data, if it fails, skip
                 try:
                     msg = json.loads(data.decode('utf-8'))
-                    # decoding of packed data (seq, time, chs)
+                    
+                    # check if 'data' key is in the message, if not, skip
+                    if 'data' not in msg.keys():
+                        continue
+
+                    # decoding of struct packed seq, time, & checksum
                     packed_data = msg['pckd']
                     data = base64.b64decode(packed_data)
                     msg['seq'], msg['time'], msg['chs'] = struct.unpack('IdB', data)
+                    
+                    #decode of main compressed data, & decompress it into msg['data']
+                    compressed_data = base64.b64decode(msg['data'])
+                    decompressed_data = zlib.decompress(compressed_data).decode('utf-8')
+                    msg['data'] = decompressed_data
                 
                 except json.JSONDecodeError as e:
-                    self.log(f"**json error**; {e}")
+                    self.log(f"**json decoder error**; {e}")
+                    continue
+                except zlib.error as e:
+                    self.log(f"**zlib error**; {e}")
                     continue
 
                 # calculate checksum of received packet to compare with expected checksum
