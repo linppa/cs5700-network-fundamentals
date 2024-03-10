@@ -76,6 +76,9 @@ The command line syntax for the receiving program is given below.
   mutal situation since it was difficult for us to fully learn about the
   protocol without implementing the project from start to finish.
 
+- I attempted to play around with struct and base64 to encode and decode the
+  packet, but I'm not sure if I fully implemented it correctly. 
+
 
 ## Testing:
 - The protocol was tested by utilizing the test suite provided by the professor,
@@ -88,3 +91,6 @@ The command line syntax for the receiving program is given below.
 > https://educatedguesswork.org/posts/transport-protocols-intro/
 > https://web.mit.edu/6.033/2018/wwwdocs/assignments/rtp_guide.pdf
 > https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings
+> https://docs.python.org/3/library/struct.html#struct-format-strings
+> https://docs.python.org/3/library/base64.html
+
