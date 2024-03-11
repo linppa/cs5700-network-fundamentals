@@ -1,6 +1,6 @@
 #!/usr/bin/env -S python3 -u
 
-import argparse, socket, time, json, select, sys, struct, base64, zlib
+import argparse, socket, time, json, select, sys, struct, zlib
 
 DATA_SIZE = 1375
 
@@ -66,24 +66,24 @@ class Sender:
             data (str): The data to send.
             sequence_number (int): The sequence number of the packet.
         '''
-        # compress data with zlib, encode with base64 (to be json compatible), & decode to utf-8
+        # compress data block & calculate checksum & timestamp
         compressed_data = zlib.compress(data.encode('utf-8'), level=9)
-        compressed_data = base64.b64encode(compressed_data).decode('utf-8')
+        checksum = sum(bytearray(compressed_data)) % 256
+        current_time = int(time.time())
+        # size of the compressed data
+        data_size = len(compressed_data)
+        
+        # header format [sequence number, data size, current time, checksum]
+        # I = unsigned int, d = double, B = unsigned char
+        header_format = 'IIdB'
+        header = struct.pack(header_format, sequence_number, data_size, current_time, checksum)
+        
+        # package header & compressed data together (since compressed data is variable size, will be separate from fixed header)
+        packet = header + compressed_data
+        
+        # send the packet
+        self.socket.sendto(packet, (self.host, self.remote_port))
 
-        # calculate checksum to detect corruption
-        checksum = sum(bytearray(data.encode('utf-8'))) % 256
-        current_time = time.time()
-
-        # packable numeric data using struct
-        packed_data = struct.pack('IdB', sequence_number, current_time, checksum)
-        # use format compatible with JSON
-        packed_data = base64.b64encode(packed_data).decode('utf-8')
-
-        # packed data message to send
-        message = {
-            "data": compressed_data,
-            "pckd": packed_data
-        }
         # detailed message to track outstanding packets
         detailed_message = {
             "seq": sequence_number, 
@@ -93,10 +93,6 @@ class Sender:
         }
         # track the outstanding packets sent
         self.outstanding_packets[sequence_number] = detailed_message
-        
-        # send the packet to the remote host and port
-        self.socket.sendto(json.dumps(message).encode('utf-8'), (self.host, self.remote_port))
-        self.log(f"**Sending packet**; {sequence_number}; checksum: {checksum}")
 
     
     def ack_received(self, ack_sequence_number):
@@ -159,10 +155,10 @@ class Sender:
 
                     # log for debugging, so doesn't affect print output
                     self.log(f"**Received ack**; {ack['seq']}")
-                    # self.log(f"**cwnd**; {self.cwnd}")
-                    # self.log(f"**ssthresh**; {self.ssthresh}")
-                    # self.log(f"**rtt**; {self.rtt}")
-                    # self.log(f"**rto**; {self.rto}")
+                    self.log(f"**cwnd**; {self.cwnd}")
+                    self.log(f"**ssthresh**; {self.ssthresh}")
+                    self.log(f"**rtt**; {self.rtt}")
+                    self.log(f"**rto**; {self.rto}")
                     # self.log(f"**outstanding_packets**; {self.outstanding_packets}")
 
                 elif conn == sys.stdin:
