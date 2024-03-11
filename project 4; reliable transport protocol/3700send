@@ -58,9 +58,9 @@ class Sender:
         '''
         This function sends a complete message with a checksum to detect
         corruption of the packet. Fields such as sequence number, current time,
-        and checksum are packed using Struct to be sent. After sending, the
-        message is added to the outstanding packets list & logs the message
-        being sent.
+        and checksum are packed using Struct to be sent. The main data block is
+        also compressed and packed to be sent. After sending, the message is
+        added to the outstanding packets list & logs the message being sent.
         
         Args:
             data (str): The data to send.
@@ -68,31 +68,29 @@ class Sender:
         '''
         # compress data block & calculate checksum & timestamp
         compressed_data = zlib.compress(data.encode('utf-8'), level=9)
+        compressed_data_size = len(compressed_data)
         checksum = sum(bytearray(compressed_data)) % 256
         current_time = int(time.time())
-        # size of the compressed data
-        data_size = len(compressed_data)
-        
-        # header format [sequence number, data size, current time, checksum]
         # I = unsigned int, d = double, B = unsigned char
         header_format = 'IIdB'
-        header = struct.pack(header_format, sequence_number, data_size, current_time, checksum)
         
-        # package header & compressed data together (since compressed data is variable size, will be separate from fixed header)
+        # header format [sequence number, data size, current time, checksum]
+        header = struct.pack(header_format, sequence_number, compressed_data_size, current_time, checksum)
+        # package header & compressed data together (compressed data is variable size, header is fixed size)
         packet = header + compressed_data
         
         # send the packet
         self.socket.sendto(packet, (self.host, self.remote_port))
 
-        # detailed message to track outstanding packets
-        detailed_message = {
+        # detailed packet info to track outstanding packets
+        packet_details = {
             "seq": sequence_number, 
             "data": data, 
             "time": current_time,
             "chs": checksum
         }
         # track the outstanding packets sent
-        self.outstanding_packets[sequence_number] = detailed_message
+        self.outstanding_packets[sequence_number] = packet_details
 
     
     def ack_received(self, ack_sequence_number):
@@ -104,9 +102,10 @@ class Sender:
             ack_sequence_number (int): The sequence number of the packet that was acknowledged.
         '''
         if ack_sequence_number in self.outstanding_packets:
-            # adjust round trip time based on ack received; NOTE: transport ptt, slide 43 for formula
+            # calculate sample rtt & adjust round trip time; NOTE: transport ptt, slide 43 for formula
             send_time = self.outstanding_packets[ack_sequence_number]["time"]
-            self.rtt = (0.875 * self.rtt) + (0.125 * (time.time() - send_time))
+            sample_rtt = time.time() - send_time
+            self.rtt = (0.875 * self.rtt) + (0.125 * (sample_rtt))
             # adjust retransmission timeout based on rtt
             self.rto = self.rtt * 2
 
@@ -117,7 +116,6 @@ class Sender:
             else: # self.cwnd >= self.ssthresh
                 # congestion avoidance phase; NOTE: cong contr, slide 25
                 self.cwnd += 1
-            
             # remove the acked packet from the outstanding packets list
             del self.outstanding_packets[ack_sequence_number]
 
@@ -136,7 +134,7 @@ class Sender:
             for conn in socks:
                 # ----- SOCKET -----
                 if conn == self.socket:
-                    data, addr = conn.recvfrom(65535)
+                    data, _ = conn.recvfrom(65535)
 
                     # if no data, skip
                     if not data:
@@ -150,15 +148,15 @@ class Sender:
                         continue
 
                     # call the ack_received function to handle the ack;
-                    # will adjust rtt, rto, and congestion window, & removes the acked packet from outstanding packets list
+                    # adjusts rtt, rto, and congestion window, & removes the acked packet from outstanding packets list
                     self.ack_received(ack["seq"])  
 
                     # log for debugging, so doesn't affect print output
                     self.log(f"**Received ack**; {ack['seq']}")
-                    self.log(f"**cwnd**; {self.cwnd}")
-                    self.log(f"**ssthresh**; {self.ssthresh}")
-                    self.log(f"**rtt**; {self.rtt}")
-                    self.log(f"**rto**; {self.rto}")
+                    # self.log(f"**cwnd**; {self.cwnd}")
+                    # self.log(f"**ssthresh**; {self.ssthresh}")
+                    # self.log(f"**rtt**; {self.rtt}")
+                    # self.log(f"**rto**; {self.rto}")
                     # self.log(f"**outstanding_packets**; {self.outstanding_packets}")
 
                 elif conn == sys.stdin:
@@ -173,7 +171,6 @@ class Sender:
                             self.send_complex(data, self.sequence_number)
                             # track next sequence number
                             self.sequence_number += 1
-
                         # there is no more data to send, exit  
                         if len(data) == 0:
                             # all data has been sent & all ACKs received

@@ -4,6 +4,7 @@
 - [Linda Quach](https://github.com/linppa)
 
 - Starter code provided by Professor Christo Wilson at Northeastern University.
+- CS 5700 - Network Fundamentals - Spring 2024
 
 ## Description:
 - In this project we designed a simple transport protocol that provides reliable

@@ -13,7 +13,6 @@ class Receiver:
         self.socket.bind(('0.0.0.0', 0))
         self.port = self.socket.getsockname()[1]
         self.log("Bound to port %d" % self.port)
-
         self.remote_host = None
         self.remote_port = None
 
@@ -71,12 +70,12 @@ class Receiver:
         incrementing as we receive more packets. Printed/delivered packets are
         stored in the sequences_acknowledged list to later delete.
         '''
-        # iterate through each entry in the ack_messages dict,
-        # starting from expected seq num of 0, we will print it, and increment for the next expected seq num (0, 1, ..., etc)
-        # so the packets are printed in correct order
+        # starting from expected seq num 0, print it & increment for next expected seq num (0, 1, ..., etc) to print the packets in order
         for key, value in self.ack_messages.items():
+            # if packet seq num == expected seq num (initally 0), print it
             if key == self.expected_seq_num:
                 print(value["data"], end='', flush=True)
+                # find next expected seq num to print
                 self.expected_seq_num += 1
                 # we've printed the packet, so it has been acknowledged & delivered
                 self.sequences_acknowledged.append(key)
@@ -93,12 +92,9 @@ class Receiver:
             socks = select.select([self.socket], [], [])[0]
             for conn in socks:
                 packet, addr = conn.recvfrom(65535)
-
                 if self.remote_host is None:
                     self.remote_host = addr[0]
                     self.remote_port = addr[1]
-
-                # if no data, skip
                 if not packet:
                     continue
 
@@ -107,13 +103,11 @@ class Receiver:
                 header_size = struct.calcsize(header_format)
                 header = packet[:header_size]
                 sequence_number, data_size, current_time, checksum = struct.unpack(header_format, header)
-                
-                # extract the compressed data from the packet using the header size and data size
+                # extract the compressed data block from the packet, starting after the header
                 compressed_data = packet[header_size: header_size + int(data_size)]
 
                 # calculate checksum of received packet to compare with expected checksum
                 received_checksum = sum(bytearray(compressed_data)) % 256
-
                 # verify checksum of received packet
                 if received_checksum == checksum:
                     # log valid packet received & decompress the data block
