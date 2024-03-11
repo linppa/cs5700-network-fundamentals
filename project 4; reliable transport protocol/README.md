@@ -57,7 +57,13 @@ The command line syntax for the receiving program is given below.
 - Since the deadline was extended, I was able to play with zlib and base64 with
   the struct module to encode and decode the packet to even further minimize the
   byte size of the packet. It was a good learning experience to play around with
-  these modules, but I'm not sure if I fully implemented it correctly.
+  these modules, but I'm not sure if I fully implemented it correctly. After
+  discussing with the professor, I realized that I was so focused on trying to
+  accomadate the JSON encoded packet headers, that I didn't realize that I could
+  just use Struct to create a fixed-size binary encoded packet instead.
+  Therefore, I made some minor changes in the packet format to send it as a
+  binary encoded packet instead of a JSON encoded packet.
+
 
 
 ## Challenges:
@@ -84,7 +90,10 @@ The command line syntax for the receiving program is given below.
 - Trying to figure out how to compress the data was a challenge since Struct
   only works with fixed-size data, such as the sequence number, time, and
   checksum. The actual data block was a variable size, so I had to figure out
-  how to compress it. 
+  how to compress it. After discussing with the professor, I realized that I was
+  so focused on trying to accomadate the JSON encoded packet headers, that I
+  didn't realize that I could just use Struct to create a fixed-size binary
+  encoded packet instead.
 
 
 ## Testing:
@@ -92,6 +101,9 @@ The command line syntax for the receiving program is given below.
   along with debugging using log/print statements. Since the test suite help to
   implement the protocol in a step-by-step manner, it was helpful to build the
   protocol with each test.
+
+- Log statements were heavily used to visualize the behavior of the protocol
+  at each step, and decipher what each test in the unrilable network was doing.
 
 
 ## Resources:

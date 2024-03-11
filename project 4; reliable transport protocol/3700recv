@@ -1,6 +1,6 @@
 #!/usr/bin/env -S python3 -u
 
-import argparse, socket, time, json, select, sys, struct, base64, zlib
+import argparse, socket, time, json, select, sys, struct, zlib
 
 # ----- RECEIVER CLASS -----
 class Receiver:
@@ -92,62 +92,78 @@ class Receiver:
         while True:
             socks = select.select([self.socket], [], [])[0]
             for conn in socks:
-                data, addr = conn.recvfrom(65535)
+                packet, addr = conn.recvfrom(65535)
 
                 if self.remote_host is None:
                     self.remote_host = addr[0]
                     self.remote_port = addr[1]
 
                 # if no data, skip
-                if not data:
+                if not packet:
                     continue
                 
-                # attempt to decode the data, if it fails, skip
-                try:
-                    msg = json.loads(data.decode('utf-8'))
+                # # attempt to decode the data, if it fails, skip
+                # try:
+                #     msg = json.loads(packet.decode('utf-8'))
                     
-                    # check if 'data' key is in the message, if not, skip
-                    if 'data' not in msg.keys():
-                        continue
+                #     # check if 'data' key is in the message, if not, skip
+                #     if 'data' not in msg.keys():
+                #         continue
 
-                    # decoding of struct packed seq, time, & checksum
-                    packed_data = msg['pckd']
-                    data = base64.b64decode(packed_data)
-                    msg['seq'], msg['time'], msg['chs'] = struct.unpack('IdB', data)
+                #     # decoding of struct packed seq, time, & checksum
+                #     packed_data = msg['pckd']
+                #     packet = base64.b64decode(packed_data)
+                #     msg['seq'], msg['time'], msg['chs'] = struct.unpack('IdB', packet)
                     
-                    #decode of main compressed data, & decompress it into msg['data']
-                    compressed_data = base64.b64decode(msg['data'])
-                    decompressed_data = zlib.decompress(compressed_data).decode('utf-8')
-                    msg['data'] = decompressed_data
+                #     #decode of main compressed data, & decompress it into msg['data']
+                #     compressed_data = base64.b64decode(msg['data'])
+                #     decompressed_data = zlib.decompress(compressed_data).decode('utf-8')
+                #     msg['data'] = decompressed_data
                 
-                except json.JSONDecodeError as e:
-                    self.log(f"**json decoder error**; {e}")
-                    continue
-                except zlib.error as e:
-                    self.log(f"**zlib error**; {e}")
-                    continue
+                # except json.JSONDecodeError as e:
+                #     self.log(f"**json decoder error**; {e}")
+                #     continue
+                # except zlib.error as e:
+                #     self.log(f"**zlib error**; {e}")
+                #     continue
+
+                header_format = 'IIdB'
+                header_size = struct.calcsize(header_format)
+                
+                # Unpack the header
+                header = packet[:header_size]
+                sequence_number, data_size, current_time, checksum = struct.unpack(header_format, header)
+                
+                # Extract the data using the size specified in the header
+                compressed_data = packet[header_size:header_size+data_size]
 
                 # calculate checksum of received packet to compare with expected checksum
-                received_checksum = sum(bytearray(msg["data"].encode('utf-8'))) % 256
+                received_checksum = sum(bytearray(compressed_data)) % 256
 
                 # verify checksum of received packet
-                if received_checksum == msg["chs"]:
+                if received_checksum == checksum:
                     # log received data message for verified packet
-                    self.log(f"**Received ack**; {msg['seq']}")
+                    self.log(f"**Received ack**; {sequence_number}")
+                    data = zlib.decompress(compressed_data).decode('utf-8')
 
                     # if the packet seq num isnt in already in the ack_messages we've saved, then store the entire message
                     # we will hang on to thess messages until we can print it to stdout in the correct order
-                    if msg["seq"] not in self.ack_messages.keys():
+                    if sequence_number not in self.ack_messages.keys():
                         # store the entire message to print at the end
-                        self.ack_messages[msg["seq"]] = msg
+                        self.ack_messages[sequence_number] = {
+                            "seq": sequence_number,
+                            "data": data,
+                            "time": current_time,
+                            "chs": checksum
+                        }
 
                     # send ack of sequence number to sender immediately, so sender can keep sending more packets
-                    self.send({ "type": "ack", "seq": msg["seq"] })
-                    self.log(f"**Sending ack**; {msg['seq']}")
+                    self.send({ "type": "ack", "seq": sequence_number })
+                    self.log(f"**Sending ack**; {sequence_number}")
                 
                 else:
                     # log received data message for corrupted packet & skip
-                    self.log(f"**Received corrupted ack**; {msg['seq']}")
+                    self.log(f"**Received corrupted ack**; {sequence_number}")
                     continue
                     
                 # sort the ack messages dict by sequence number, to order the packets, updates self.ack_messages
