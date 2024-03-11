@@ -69,19 +69,19 @@ class Sender:
         # compress data block & calculate checksum & timestamp
         compressed_data = zlib.compress(data.encode('utf-8'), level=9)
         checksum = sum(bytearray(compressed_data)) % 256
-        current_time = int(time.time())  # Assuming you want to keep this as an int for simplicity
+        current_time = int(time.time())
         # size of the compressed data
         data_size = len(compressed_data)
         
         # header format [sequence number, data size, current time, checksum]
         # I = unsigned int, d = double, B = unsigned char
-        header_format = 'IIdB'  # Unsigned int (4 bytes), Unsigned int (4 bytes), double (8 bytes), unsigned char (1 byte)
+        header_format = 'IIdB'
         header = struct.pack(header_format, sequence_number, data_size, current_time, checksum)
         
-        # Concatenate header and data
+        # package header & compressed data together (since compressed data is variable size, will be separate from fixed header)
         packet = header + compressed_data
         
-        # Send the packet
+        # send the packet
         self.socket.sendto(packet, (self.host, self.remote_port))
 
         # detailed message to track outstanding packets
@@ -93,10 +93,6 @@ class Sender:
         }
         # track the outstanding packets sent
         self.outstanding_packets[sequence_number] = detailed_message
-        
-        # # send the packet to the remote host and port
-        # self.socket.sendto(json.dumps(message).encode('utf-8'), (self.host, self.remote_port))
-        # self.log(f"**Sending packet**; {sequence_number}; checksum: {checksum}")
 
     
     def ack_received(self, ack_sequence_number):
@@ -163,7 +159,7 @@ class Sender:
                     self.log(f"**ssthresh**; {self.ssthresh}")
                     self.log(f"**rtt**; {self.rtt}")
                     self.log(f"**rto**; {self.rto}")
-                    self.log(f"**outstanding_packets**; {self.outstanding_packets}")
+                    # self.log(f"**outstanding_packets**; {self.outstanding_packets}")
 
                 elif conn == sys.stdin:
                     # ----- STANDARD INPUT -----
