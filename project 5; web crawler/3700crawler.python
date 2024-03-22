@@ -1,85 +1,102 @@
 #!/usr/bin/env python3
-# ssh linppa@login-students.khoury.northeastern.edu
+
 # Your password is: b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076
 # ./3700crawler.python linppa b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076
 
 import argparse
 import socket
 import ssl
-# legal libraries
 import urllib.parse
 from html.parser import HTMLParser
 
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
-ROOT_URL = "/fakebook/"
 LOGIN_URL = "/accounts/login/?next=/fakebook/"
 
 
 # ==============================================================================
 #                                HTML PARSER CLASS                              
 # ==============================================================================
-
 class MyHTMLParser(HTMLParser):
+    '''
+    This class modifies the HTMLParser to specifically target the requirements
+    of the project. It parses the links, csrf tokens, and secret flags found in
+    the HTML bodies.
+    '''
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+        # variables to parse
         self.links = set()
         self.secret_flags = []
         self.flag_found = False
         self.csrf_middleware_token = None
+
 
     def handle_starttag(self, tag, attrs):
         # find <a> tag, skim thru attributes
         if tag == 'a':
             for name, value in attrs:
                 if name == 'href':
-                    # store the link
-                    self.links.add(value)
-        
+                    if '/fakebook/' in value:
+                        # store the link
+                        self.links.add(value)
         # find <h3> tag, look for class='secret_flag'
         elif tag == 'h3':
             for name, value in attrs:
                 if name == 'class' and value == 'secret_flag':
                     self.flag_found = True
-        
         # find <input> tag, look for name='csrfmiddlewaretoken'
         elif tag == 'input':
             for name, value in attrs:
                 # find the csrf token
                 if name == 'name' and value == 'csrfmiddlewaretoken':
-                    # store the value of the csrf token
+                    # store the value of csrf token
                     for name, value in attrs:
                         if name == 'value':
                             self.csrf_middleware_token = value
 
+
     def handle_data(self, data):
         # store the secret flag
         if self.flag_found:
-            flag = data.split(': ')[1]
-            self.secret_flags.append(flag)
+            flag = data.split('FLAG: ')[1]
+            self.secret_flags.append(flag.strip())
+            self.flag_found = False
+
+
+    def handle_endtag(self, tag):
+        if self.flag_found and tag == 'h3':
             self.flag_found = False
 
 
 # ==============================================================================
 #                                CRAWLER CLASS                              
 # ==============================================================================
-
 class Crawler:
+    '''
+    The crawler class handles the crawling of the Fakebook website. It works
+    alongside the MyHTMLParser class to parse the HTML bodies and extract the
+    URL links and secret flags. 
+    '''
     def __init__(self, args):
         self.server = args.server
         self.port = args.port
         self.username = args.username
         self.password = args.password
 
-        self.frontier = []
-        self.history = []
-        self.target_domain = ''
+        # tracks urls to visit & visited
+        self.frontier = set()
+        self.history = set()
 
         self.cookies = []
+        self.secret_flags = []
         
 
     def recv_data(self, mysocket):
+        '''
+        Receives data from the server until the end of the html body is reached.
+        Then decodes the data and returns it.
+        '''
         data = mysocket.recv(1000).decode('ascii')
         while '</html>' not in data:
             if not data:
@@ -89,40 +106,63 @@ class Crawler:
 
 
     def split_data(self, data):
-        # headers only
-        http_headers = data.split('\r\n\r\n')[0]
-        # html body only
-        html_body = data.split('\r\n\r\n')[1].strip()
-        return http_headers, html_body
+        '''
+        Splits the data into the http headers and the html body. Otherwise
+        returns the data as is.
+        '''
+        try:
+            # headers only
+            http_headers = data.split('\r\n\r\n')[0]
+            # html body only
+            html_body = data.split('\r\n\r\n')[1].strip()
+            return http_headers, html_body
+        except:
+            # if no html body
+            return data, ''
 
 
     def get_cookies(self, http_headers):
-        # NOTE: maybe use dictionary?
+        '''
+        Parses the cookies from the http headers and stores them in a list.
+        '''
         for line in http_headers.split('\r\n'):
             if line.startswith('set-cookie: '):
                 cookie_data = line.split('set-cookie: ')[1]
                 cookie = cookie_data.split(';')[0]
-                # cookie = cookie.split('=')[1]
+                # cookie format: 'csrftoken=abc123'or 'sessionid=abc123'
                 self.cookies.append(cookie)
 
 
-    def get_status_code(self, http_headers):
+    def get_status_code(self, data):
+        '''
+        Parses the status code from the http headers and returns it.
+        '''
         # grab first line 'HTTP/1.1 200 OK' from headers, grab '200'
-        status_code = http_headers.split('\r\n')[0].split(' ')[1]
+        status_code = data.split('\r\n')[0].split(' ')[1]
         return status_code
     
+
     def handle_login_get(self, mysocket):
+        '''
+        Create a GET request to send to the server to handle the initial login.
+        '''
         get_request = f'GET {LOGIN_URL} HTTP/1.1\r\n' \
                 f'Host: {self.server}:{self.port}\r\n' \
                 f'Connection: keep-alive\r\n\r\n'
-                # print debugging
-        print("** GET REQUEST to %s:%d **" % (self.server, self.port))
-        print(get_request)
+                
+        get_request = get_request.encode('ascii')
+        # print("** GET REQUEST; **\n", get_request, "\n")
 
         # send the request
-        mysocket.send(get_request.encode('ascii'))
+        mysocket.send(get_request)
+
 
     def handle_login_post(self, mysocket, csrf_middleware_token):
+        '''
+        Create a POST request to send to the server to handle the initial login.
+        Contains the required form data to log in, such as the username,
+        password, and csrf token.
+        '''
         form_info = {
             'username': self.username,
             'password': self.password,
@@ -138,21 +178,68 @@ class Crawler:
             f'Cookie: {self.cookies[0]}; {self.cookies[1]}\r\n' \
             f'Connection: keep-alive\r\n\r\n' \
             f'{form_info}\r\n\r\n'
-        print("** POST REQUEST to %s:%d **" % (self.server, self.port))
-        print(post_request)
-
+        post_request = post_request.encode('ascii')
+        # print(f'** POST REQUEST; **\n{post_request}\n')
         # send the request
-        mysocket.send(post_request.encode('ascii'))
+        mysocket.send(post_request)
 
-    def create_get_request(self, url):
-        url = urllib.parse.urlparse(url)
-        get_request = f'GET {url.path} HTTP/1.1\r\n' \
+
+    def create_get_request(self, url, cookies):
+        '''
+        Create a GET request message to send to the server, given the url and
+        cookies. Returns the GET request message as bytes.
+        '''
+        get_request = f'GET {url} HTTP/1.1\r\n' \
             f'Host: {self.server}:{self.port}\r\n' \
-            f'Cookie: {self.cookies[0]}; {self.cookies[1]}\r\n' \
+            f'Cookie: {cookies}\r\n' \
             f'Connection: keep-alive\r\n\r\n'
+        get_request = get_request.encode('ascii')
         return get_request
 
+
+    def handle_redirect(self, mysocket, url):
+        '''
+        Handles the redirecting of the crawler to the given url. Sends a GET
+        request to the server, receives the response, and parses the html body
+        to extract the links and secret flags. Depending on the status code,
+        the crawler will either continue, abandon, or retry the request.
+        '''
+        # join all cookies to send in GET request
+        cookies = '; '.join(self.cookies)
+        get_request = self.create_get_request(url, cookies)
+        # print(f'** GET REQUEST TO REDIRECT URL; **\n{get_request}\n')
+        mysocket.send(get_request)
+
+        # handle each status code from the response
+        get_response = self.recv_data(mysocket)
+        status_code = self.get_status_code(get_response)
+
+        # everything is good to go
+        if status_code == '200':
+            _, html_body = self.split_data(get_response)
+            # print(f'** HTML BODY; **\n{html_body}\n')
+
+            # get urls from body to add to frontier
+            parser = MyHTMLParser()
+            parser.feed(html_body)
+            self.frontier.update(parser.links)
+            self.secret_flags.extend(parser.secret_flags)
+        # abandon url with error codes
+        elif status_code in ['403', '404']:
+            pass
+        # retry request until successful
+        elif status_code == '503':
+            self.handle_redirect(mysocket, url)
+
+
     def run(self):
+        '''
+        The main function that runs the crawler. It begins by connecting to the
+        server and sending the initial login GET and POST requests to log in.
+        Once logged in successfully, as indicated by the first redirect, the
+        crawler will begin crawling the website. It will continue in this manner
+        until all 5 secret flags are found and printed.
+        '''
         # ----------------- CONNECT TCP SOCKET & TLS ENCRYPT -----------------
         mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         mysocket.connect((self.server, self.port))
@@ -167,12 +254,12 @@ class Crawler:
 
         # split data into http headers & html body
         http_headers, html_body = self.split_data(get_response)
-        print(f'** HTTP HEADERS; **\n{http_headers}\n')
-        print(f'** HTML BODY; **\n{html_body}\n')
+        # print(f'** HTTP HEADERS; **\n{http_headers}\n')
+        # print(f'** HTML BODY; **\n{html_body}\n')
 
         # get cookies from header
         self.get_cookies(http_headers)
-        print(f'** COOKIES FROM GET - CSRF TOKEN & SESSIONID; **\n{self.cookies}\n')
+        # print(f'** COOKIES FROM GET - CSRF TOKEN & SESSIONID; **\n{self.cookies}\n')
                 
         # get csrf token from body
         parser = MyHTMLParser()
@@ -181,32 +268,66 @@ class Crawler:
 
         # send POST request
         self.handle_login_post(mysocket, csrf_middleware_token)
-        
         # get cookies from post header & location to redirect
         post_response = ''
         post_response = mysocket.recv(10000).decode('ascii')
-        print(f'** POST RESPONSE; **\n{post_response}\n')
+        # print(f'** POST RESPONSE; **\n{post_response}\n')
         
+        # get cookies from post header
         self.get_cookies(post_response)
-        print(f'** COOKIES FROM POST - CSRF TOKEN & SESSIONID; **\n{self.cookies}\n')
+        # print(f'** COOKIES FROM POST - CSRF TOKEN & SESSIONID; **\n{self.cookies}\n')
 
-        # get location url from post response
+        # get location url from post response to start redirect
         for line in post_response.split('\r\n'):
             if line.startswith('location: '):
+                # use the location url to redirect to
                 redirect_url = line.split('location: ')[1]
-                print(f'** REDIRECT URL; **\n{redirect_url}\n')
+                # print(f'** REDIRECT URL; **\n{redirect_url}\n')
 
-        # ----------------- VARIABLES -----------------
-        print(f'**----------------- VARIABLES -----------------**\n')
-        print(f'** COOKIES; **\n{self.cookies}\n')
-        print(f'** FRONTIER LINKS; **\n{self.frontier}\n')
-        print(f'** HISTORY LINKS; ** \n{self.history}\n')
-        print(f'** SECRET FLAGS; **\n{parser.secret_flags}\n')
-        print(f'** CSRF MIDDLEWARE TOKEN; **\n{parser.csrf_middleware_token}\n')
+        # ----------------- BEGIN CRAWLING -----------------
+        # sends the GET request, & receives the response to split header/body
+        self.handle_redirect(mysocket, redirect_url)
+        # print(f'** FRONTIER LINKS; **\n{self.frontier}\n')
 
-    
-        
+        while self.frontier:
+            # grab url from frontier to visit
+            current_url = self.frontier.pop()
+            # print(f'CURRENT URL; {current_url}')
 
+            if current_url in self.history:
+                continue
+            else:
+                # add to the history list & visit the url
+                self.history.add(current_url)
+                # print(f'** HISTORY LINKS; ** \n{self.history}\n')
+                self.handle_redirect(mysocket, current_url)
+                # print(f'** SECRET FLAGS; **\n{self.secret_flags}\n')
+
+            # end crawling if 5 secret flags found
+            if len(self.secret_flags) >= 5:
+                break
+
+        # ----------------- END CRAWLER & PRINT FLAGS -----------------
+        # print secret flags
+        for flag in self.secret_flags:
+            print(flag, flush=True)
+
+        # close the socket
+        mysocket.close()
+
+
+        # ----------------- DEBUGGING -----------------
+        # print(f'**----------------- ** END CRAWLER ** -----------------**\n')
+        # print(f'** COOKIES; **\n{self.cookies}\n')
+        # print(f'** FRONTIER LINKS; **\n{self.frontier}\n')
+        # print(f'** HISTORY LINKS; ** \n{self.history}\n')
+        # print(f'** SECRET FLAGS; **\n{parser.secret_flags}\n')
+        # print(f'** CSRF MIDDLEWARE TOKEN; **\n{parser.csrf_middleware_token}\n')
+
+
+# ==============================================================================
+#                                MAIN FUNCTION
+# ==============================================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='crawl Fakebook')
     parser.add_argument('-s', dest="server", type=str, default=DEFAULT_SERVER, help="The server to crawl")
