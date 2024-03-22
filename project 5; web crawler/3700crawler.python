@@ -1,13 +1,69 @@
 #!/usr/bin/env python3
 # ssh linppa@login-students.khoury.northeastern.edu
 # Your password is: b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076
+# ./3700crawler.python linppa b4da98eadabe2ce0801f46a20b35f587a70128969ec5cba5e0535f1f4ad7b076
 
 import argparse
 import socket
 import ssl
+# legal libraries
+import urllib.parse
+from html.parser import HTMLParser
 
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
+ROOT_URL = "/fakebook/"
+LOGIN_URL = "/accounts/login/?next=/fakebook/"
+
+
+# ==============================================================================
+#                                HTML PARSER CLASS                              
+# ==============================================================================
+
+class MyHTMLParser(HTMLParser):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.links = set()
+        self.secret_flags = []
+        self.flag_found = False
+        self.csrf_middleware_token = None
+
+    def handle_starttag(self, tag, attrs):
+        # find <a> tag, skim thru attributes
+        if tag == 'a':
+            for name, value in attrs:
+                if name == 'href':
+                    # store the link
+                    self.links.add(value)
+        
+        # find <h3> tag, look for class='secret_flag'
+        elif tag == 'h3':
+            for name, value in attrs:
+                if name == 'class' and value == 'secret_flag':
+                    self.flag_found = True
+        
+        # find <input> tag, look for name='csrfmiddlewaretoken'
+        elif tag == 'input':
+            for name, value in attrs:
+                # find the csrf token
+                if name == 'name' and value == 'csrfmiddlewaretoken':
+                    # store the value of the csrf token
+                    for name, value in attrs:
+                        if name == 'value':
+                            self.csrf_middleware_token = value
+
+    def handle_data(self, data):
+        # store the secret flag
+        if self.flag_found:
+            flag = data.split(': ')[1]
+            self.secret_flags.append(flag)
+            self.flag_found = False
+
+
+# ==============================================================================
+#                                CRAWLER CLASS                              
+# ==============================================================================
 
 class Crawler:
     def __init__(self, args):
@@ -16,43 +72,139 @@ class Crawler:
         self.username = args.username
         self.password = args.password
 
-        # TODO: track the frontier; store uncrawled url in queue, stack, or list
-        # TODO: track the history; store crawled url
-        # TODO: only crawl target domain
+        self.frontier = []
+        self.history = []
+        self.target_domain = ''
 
-    def run(self):
-        # TODO: HTTP/1.1; supports chunked encoding
-        # TODO: 'connection: keep-alive' tricky to get correct, 'accept-encoding: gzip'
-        request = "GET /accounts/login/?next=/fakebook/ HTTP/1.1\r\nHost: proj5.3700.network\r\n\r\n"
-
-        print("Request to %s:%d" % (self.server, self.port))
-        print(request)
+        self.cookies = []
         
-        # create my socket
-        mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        mysocket.connect((self.server, self.port))
 
-        # implement TLS encryption
-        tls_encrypt = ssl.create_default_context()
-        mysocket = tls_encrypt.wrap_socket(mysocket, server_hostname=self.server)
-
-        # send the request
-        mysocket.send(request.encode('ascii'))
-
-        # receive the full html response
+    def recv_data(self, mysocket):
         data = mysocket.recv(1000).decode('ascii')
         while '</html>' not in data:
             if not data:
                 break
             data += mysocket.recv(1000).decode('ascii')
-        print(f'** full response; **\n{data}')
+        return data
 
-        # TODO: HTTP protocol aspects; GET, POST, store cookies + submit with GET request
-        # TODO: handle status codes; 
-            # 200 - OK
-            # 302 - Found
-            # 403 - Forbidden & 404 - Not Found
-            # 503 - Service Unavailable - retry request until successful
+
+    def split_data(self, data):
+        # headers only
+        http_headers = data.split('\r\n\r\n')[0]
+        # html body only
+        html_body = data.split('\r\n\r\n')[1].strip()
+        return http_headers, html_body
+
+
+    def get_cookies(self, http_headers):
+        # NOTE: maybe use dictionary?
+        for line in http_headers.split('\r\n'):
+            if line.startswith('set-cookie: '):
+                cookie_data = line.split('set-cookie: ')[1]
+                cookie = cookie_data.split(';')[0]
+                # cookie = cookie.split('=')[1]
+                self.cookies.append(cookie)
+
+
+    def get_status_code(self, http_headers):
+        # grab first line 'HTTP/1.1 200 OK' from headers, grab '200'
+        status_code = http_headers.split('\r\n')[0].split(' ')[1]
+        return status_code
+    
+    def handle_login_get(self, mysocket):
+        get_request = f'GET {LOGIN_URL} HTTP/1.1\r\n' \
+                f'Host: {self.server}:{self.port}\r\n' \
+                f'Connection: keep-alive\r\n\r\n'
+                # print debugging
+        print("** GET REQUEST to %s:%d **" % (self.server, self.port))
+        print(get_request)
+
+        # send the request
+        mysocket.send(get_request.encode('ascii'))
+
+    def handle_login_post(self, mysocket, csrf_middleware_token):
+        form_info = {
+            'username': self.username,
+            'password': self.password,
+            'csrfmiddlewaretoken': csrf_middleware_token
+        }
+        form_info = urllib.parse.urlencode(form_info)
+
+        post_request = f'POST {LOGIN_URL} HTTP/1.1\r\n' \
+            f'Host: {self.server}:{self.port}\r\n' \
+            f'Referer: https://{self.server}/fakebook/\r\n' \
+            f'Content-Type: application/x-www-form-urlencoded\r\n' \
+            f'Content-Length: {len(form_info)}\r\n' \
+            f'Cookie: {self.cookies[0]}; {self.cookies[1]}\r\n' \
+            f'Connection: keep-alive\r\n\r\n' \
+            f'{form_info}\r\n\r\n'
+        print("** POST REQUEST to %s:%d **" % (self.server, self.port))
+        print(post_request)
+
+        # send the request
+        mysocket.send(post_request.encode('ascii'))
+
+    def create_get_request(self, url):
+        url = urllib.parse.urlparse(url)
+        get_request = f'GET {url.path} HTTP/1.1\r\n' \
+            f'Host: {self.server}:{self.port}\r\n' \
+            f'Cookie: {self.cookies[0]}; {self.cookies[1]}\r\n' \
+            f'Connection: keep-alive\r\n\r\n'
+        return get_request
+
+    def run(self):
+        # ----------------- CONNECT TCP SOCKET & TLS ENCRYPT -----------------
+        mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        mysocket.connect((self.server, self.port))
+
+        tls_encrypt = ssl.create_default_context()
+        mysocket = tls_encrypt.wrap_socket(mysocket, server_hostname=self.server)
+
+        # ----------------- HANDLE INITIAL LOG IN -----------------
+        # send GET request
+        self.handle_login_get(mysocket)
+        get_response = self.recv_data(mysocket)
+
+        # split data into http headers & html body
+        http_headers, html_body = self.split_data(get_response)
+        print(f'** HTTP HEADERS; **\n{http_headers}\n')
+        print(f'** HTML BODY; **\n{html_body}\n')
+
+        # get cookies from header
+        self.get_cookies(http_headers)
+        print(f'** COOKIES FROM GET - CSRF TOKEN & SESSIONID; **\n{self.cookies}\n')
+                
+        # get csrf token from body
+        parser = MyHTMLParser()
+        parser.feed(html_body)
+        csrf_middleware_token = parser.csrf_middleware_token
+
+        # send POST request
+        self.handle_login_post(mysocket, csrf_middleware_token)
+        
+        # get cookies from post header & location to redirect
+        post_response = ''
+        post_response = mysocket.recv(10000).decode('ascii')
+        print(f'** POST RESPONSE; **\n{post_response}\n')
+        
+        self.get_cookies(post_response)
+        print(f'** COOKIES FROM POST - CSRF TOKEN & SESSIONID; **\n{self.cookies}\n')
+
+        # get location url from post response
+        for line in post_response.split('\r\n'):
+            if line.startswith('location: '):
+                redirect_url = line.split('location: ')[1]
+                print(f'** REDIRECT URL; **\n{redirect_url}\n')
+
+        # ----------------- VARIABLES -----------------
+        print(f'**----------------- VARIABLES -----------------**\n')
+        print(f'** COOKIES; **\n{self.cookies}\n')
+        print(f'** FRONTIER LINKS; **\n{self.frontier}\n')
+        print(f'** HISTORY LINKS; ** \n{self.history}\n')
+        print(f'** SECRET FLAGS; **\n{parser.secret_flags}\n')
+        print(f'** CSRF MIDDLEWARE TOKEN; **\n{parser.csrf_middleware_token}\n')
+
+    
         
 
 if __name__ == "__main__":

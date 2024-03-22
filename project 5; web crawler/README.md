@@ -31,6 +31,14 @@
   fetches the root page of the site using HTTP 1.0. But it does not implement
   TLS so it receives an error message from the server.
 
+- Next, after implementing TLS encryption, I was able to see the HTTP headers
+  along with the HTML content of the root page. It took me quite a while to try
+  to understand the information that I needed from the given headers and HTML; I
+  pulled out the basic information I could see including the initial set-cookies
+  and status code from the header, and the csrf token in the HTML.
+
+- Then, I implemented the actual login using the POST request.
+
 
 ## Challenges:
 - 
@@ -42,4 +50,9 @@
 
 ## Resources:
 > https://www.jmarshall.com/easy/http/
+> https://fasterthanli.me/articles/the-http-crash-course-nobody-asked-for
+> https://docs.python.org/3/library/urllib.parse.html
+> https://docs.python.org/3/library/html.parser.html#module-html.parser
+> https://stackoverflow.com/questions/79780/parsing-http-headers
+> 
 
