@@ -47,10 +47,15 @@
 
 ## Resources:
 > https://pythonbasics.org/webserver/
+
 > https://docs.python.org/3/library/http.server.html
+
 > https://pypi.org/project/dnslib/
+
 > https://github.com/paulc/dnslib
+
 > https://www.geeksforgeeks.org/designing-content-delivery-network-cdn-system-design/#
+
 > 
 > 
 

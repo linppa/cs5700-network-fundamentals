@@ -54,3 +54,47 @@ def parse_args():
     parser.add_argument('-n', '--name', required=True, type=str, help='CDN-specific name to translate')
     return parser.parse_args()
 
+def run_dns_server(port, cdn_name, ip_address):
+    '''
+    Runs the DNS server.
+    '''
+    # create server socket
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_socket.bind(('', port))
+    print(f' ** dns server running on port {port} ** ')
+
+    try:
+        while True:
+            # receive data from client
+            data, client_address = server_socket.recvfrom(1024)
+            query = dnslib.DNSRecord.parse(data)
+            print(f' ** received query from client address: {client_address}, query: {query} ** ')
+
+            # respond to A queries for specified CDN name (cs5700cdn.example.com)
+            if query.q.qtype == dnslib.QTYPE.A and query.q.qname == cdn_name:
+                response = query.reply()
+                # add answers to 'resource record' (RR) 
+                response.add_answer(dnslib.RR(query.q.qname, # domain name
+                                              dnslib.QTYPE.A, # query type
+                                              rdata=dnslib.A(ip_address), # IP address
+                                              ttl=60)) # time-to-live, how long record is cached
+                server_socket.sendto(response.pack(), client_address)
+                print(f' ** sent response to client address: {client_address}, response: {response} ** ')
+            else:
+                print(f' ** query not for specified CDN name ** ')
+    except Exception as e:
+        print(f' ** error: {e} ** ')
+    finally:
+        server_socket.close()
+
+
+def main():
+    args = parse_args()
+    REPLICA_IP = '0.0.0.0'
+    run_dns_server(args.port, args.name, REPLICA_IP)
+
+
+
+
+if __name__ == "__main__":
+    main()
