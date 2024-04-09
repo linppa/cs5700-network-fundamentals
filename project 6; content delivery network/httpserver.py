@@ -13,6 +13,9 @@ Implementation notes:
         
     - upload the httpserver.py file to the server
         `scp -i ssh/ssh-ed25519-quach.l.priv httpserver.py quach.l@cdn-http3.khoury.northeastern.edu:~/`
+        
+    - run http server
+        `python3 httpserver.py -p 8080 -o http://cs5700cdnorigin.ccs.neu.edu:8080/`
 
 '''
 # server name & IP address of HTTP cache servers, TODO: check if correct IP

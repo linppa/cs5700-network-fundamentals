@@ -30,6 +30,8 @@ Implementation notes:
 
     - dig command to test the DNS server
         `dig @cdn-dns.khoury.northeastern.edu -p 20380 cs5700cdn.example.com`
+
+    -
       '''
 
 
@@ -71,10 +73,10 @@ def run_dns_server(port, cdn_name):
             # receive data from client
             data, client_address = server_socket.recvfrom(1024)
             query = dnslib.DNSRecord.parse(data)
-            print(f' ** received query from client address: {client_address}, query: {query} ** ')
+            print(f' ** received query from CLIENT ADDRESS: {client_address}, QUERY: {query} ** ')
 
-            # respond to 'A Queries' for specified CDN name (cs5700cdn.example.com) NOTE: .rstrip('.')
-            if query.q.qtype == dnslib.QTYPE.A and str(query.q.qname) == cdn_name:
+            # respond to 'A Queries' for specified CDN name (cs5700cdn.example.com)
+            if query.q.qtype == dnslib.QTYPE.A and query.q.qname == cdn_name:
 
                 # get the best geographic replica for the client's IP address
                 # TODO: implement get_closest_replica() INSTEAD of round-robin
@@ -86,7 +88,7 @@ def run_dns_server(port, cdn_name):
                 response.add_answer(dnslib.RR(query.q.qname, # domain name in query
                                               dnslib.QTYPE.A, # query type (A record)
                                               rdata=dnslib.A(ip_address), # IP address of replica/cache, TODO: get replica's IP address
-                                              ttl=60)) #time-to-live, how long record is cached, TODO: check if correct TTL?
+                                              ttl=300)) #time-to-live, how long record is cached, TODO: check if correct TTL?
                 server_socket.sendto(response.pack(), client_address)
                 print(f' ** sent response to CLIENT ADDRESS: {client_address}, & RESPONSE: {response} ** ')
                 print(f' \n =============================== \n ')
