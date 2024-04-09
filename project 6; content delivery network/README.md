@@ -12,6 +12,7 @@
 - `pip install dnslib`
 - `pip install pycurl`
 - `pip install requests`
+- `pip install geoip2`
 
 
 ## Design & Implementation:
@@ -23,12 +24,22 @@
   to implement the DNS server. Although still slightly confused about the
   bigger picture, I felt I needed to build a DNS server that is able to
   return the IP address of the HTTP cache server with the lowest latency
-  (closest to the client?). Then, I need to check if that cache server (? `https://cdn-http4.khoury.northeastern.edu/`) has the
+  (closest to the client). Then, I need to check if that cache servers
+  (`https://cdn-http3.khoury.northeastern.edu/`, etc) has the
   requested webpage. If the cache server has the webpage stored, then the DNS
   server should send the webpage to the client via the HTTP cache server. If
   the cache server doesn't have the webpage, then the DNS server should send
   the request to the origin server, `http://cs5700cdnorigin.ccs.neu.edu:8080`,
   and then send the webpage to the client via the HTTP cache server.
+
+- Next, I needed to implement the HTTP cache server. 
+
+- And then, figuring out the logic of how to decide which HTTP cache server to
+  send the request to. I decided to use the geoip2 library to get the location
+  of the client and the cache servers. Then, I would calculate the distance
+  between the client and the cache servers to determine which cache server to
+  send the request to.
+
 
 
 ## Challenges:
