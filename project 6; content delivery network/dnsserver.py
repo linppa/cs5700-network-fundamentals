@@ -88,7 +88,7 @@ def run_dns_server(port, cdn_name):
                 response.add_answer(dnslib.RR(query.q.qname, # domain name in query
                                               dnslib.QTYPE.A, # query type (A record)
                                               rdata=dnslib.A(ip_address), # IP address of replica/cache, TODO: get replica's IP address
-                                              ttl=300)) #time-to-live, how long record is cached, TODO: check if correct TTL?
+                                              ttl=120)) #time-to-live, how long record is cached, TODO: check if correct TTL?
                 server_socket.sendto(response.pack(), client_address)
                 print(f' ** sent response to CLIENT ADDRESS: {client_address}, & RESPONSE: {response} ** ')
                 print(f' \n =============================== \n ')

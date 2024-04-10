@@ -1,11 +1,14 @@
 from http.server import *
-import socketserver
-import urllib.request
-import os
-import threading
+import argparse
+import requests
+import socket
+
+
 
 '''
 Implementation notes:
+
+basic implementation -- act as a proxy(pass thru), when request comes in, fetch/download content from origin server and send it back to client
     - my port range: 20380-20389
 
     - ssh into the http server
@@ -15,71 +18,86 @@ Implementation notes:
         `scp -i ssh/ssh-ed25519-quach.l.priv httpserver.py quach.l@cdn-http3.khoury.northeastern.edu:~/`
         
     - run http server
-        `python3 httpserver.py -p 8080 -o http://cs5700cdnorigin.ccs.neu.edu:8080/`
+        `python3 httpserver.py -p 20380 -o cs5700cdnorigin.ccs.neu.edu`
+        
+    - curl command to test the HTTP server
+        curl http://cs5700cdnorigin.ccs.neu.edu:8080
+
+    - check if server is running
+        `time wget http://45.33.55.171:20380/cs5700cdn.example.com`??
+        `time wget http://cdn-http3.khoury.northeastern.edu:20380/cs5700cdn.example.com
 
 '''
-# server name & IP address of HTTP cache servers, TODO: check if correct IP
-REPLICA_SERVERS = {
-    'cdn-http3.khoury.northeastern.edu': '45.33.55.171',
-    'cdn-http4.khoury.northeastern.edu': '170.187.142.220', 
-    'cdn-http7.khoury.northeastern.edu': '213.168.249.157', 
-    'cdn-http11.khoury.northeastern.edu': '139.162.82.207', 
-    'cdn-http14.khoury.northeastern.edu': '45.79.124.209', 
-    'cdn-http15.khoury.northeastern.edu': '192.53.123.145', 
-    'cdn-http16.khoury.northeastern.edu': '192.46.221.203',
-}
 
-CACHE_DATA = {}
-ORIGIN_SERVER = 'http://cs5700cdnproject.ccs.neu.edu:8080'
+ORIGIN_SERVER = 'cs5700cdnorigin.ccs.neu.edu' 
+ORIGIN_SERVER_PORT = 8080
 
+# basic implementation of proxy server (pass thru)
 class HTTPRequestHandler(BaseHTTPRequestHandler):
+    cache_content = {}
+
     def do_GET(self):
         '''
-        Handles GET requests.
+        Handles GET requests, fetches data from origin server & sends it back to client.
         '''
-        # check if data is in cache
-        if self.path in CACHE_DATA:
-            print(f' ** data found in cache for path: {self.path} ** ')
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
+        # for path `/grading/beacon` return 204 status code
+        if self.path == '/grading/beacon':
+            self.send_response(204)
             self.end_headers()
-            self.wfile.write(CACHE_DATA[self.path])
-            print(' ** CACHE DATA: {CACHE_DATA} ** ')
             return
-        
-        # get data from origin server
-        elif self.path not in CACHE_DATA:
-            print(f' ** data not found in cache for path: {self.path} ** ')
-            print(f' ** fetching data from origin server: {ORIGIN_SERVER} ** ')
-            try:
-                response = urllib.request.urlopen(f'{ORIGIN_SERVER}{self.path}')
-                html_data = response.read()
-                CACHE_DATA[self.path] = html_data
-                print(f' ** data added to cache for path: {self.path} ** ')
 
-                # send response to client
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html') # TODO: check if this is correct
-                self.end_headers()
-                self.wfile.write(html_data)
-                print(' ** CACHE DATA: {CACHE_DATA} ** ')
-                return
-            except Exception as e:
-                print(f' ** error with http request handler: {e} ** ')
-                self.send_error(404, f'error with http request handler: {e}')
-        
-        # TODO: handle errors
+        # fetch data from origin server
+        try:
+            response = requests.get(f'http://{ORIGIN_SERVER}:{ORIGIN_SERVER_PORT}{self.path}')
+            print(f' ** RESPONSE: {response}, from ORIGIN SERVER: {ORIGIN_SERVER}:{ORIGIN_SERVER_PORT}, for PATH: {self.path} ** ')
+            # TODO: cache content
+
+            # send response status code
+            self.send_response(response.status_code)
+            print(f' ** response STATUS CODE: {response.status_code} ** ')
+
+            # forwards headers from origin server to client
+            for header, value in response.headers.items():
+                self.send_header(header, value)
+            self.end_headers()
+
+            # send fetched response data/content to client
+            self.wfile.write(response.content)
+            print(f' ** response CONTENT: {response.content} ** ')
+        except requests.exceptions.RequestException as e:
+            self.send_error(502, 'Failed to fetch data from origin server')
+            print(f' ** ERROR: {e} ** ')
 
 
-def run_http_server(port):
+def run_http_server(port, origin_server):
     '''
     Runs the HTTP server.
     '''
+    # set origin server url for handler class
+    HTTPRequestHandler.origin_server = origin_server
+    server_address = ('', port)
+
     # create server socket
-    server = HTTPServer(('localhost', port), HTTPRequestHandler)
+    http_server = HTTPServer(server_address, HTTPRequestHandler)
     print(f' ** http server running on port {port} ** ')
-    server.serve_forever()
+    http_server.serve_forever()
+
+
+def parse_args():
+    '''
+    Parses command line arguments.
+    '''
+    parser = argparse.ArgumentParser(description='HTTP Server')
+    parser.add_argument('-p', '--port', required=True, type=int, help='Port number to bind HTTP server to')
+    parser.add_argument('-o', '--origin', required=True, type=str, help='Name of origin server for CDN')
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    run_http_server(args.port, args.origin)
+
 
 if __name__ == '__main__':
-    run_http_server(8080)
+    main()
 

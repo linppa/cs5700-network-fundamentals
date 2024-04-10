@@ -32,7 +32,12 @@
   the request to the origin server, `http://cs5700cdnorigin.ccs.neu.edu:8080`,
   and then send the webpage to the client via the HTTP cache server.
 
-- Next, I needed to implement the HTTP cache server. 
+- Next, I needed to implement the HTTP cache server. I initially started by
+  implementing the professor's recommendation for simply having the HTTP cache
+  server act as a proxy where it would fetch content from the origin server and
+  then send the content to the client. At this point, I was troubleshooting
+  using the beacon website, since I was having trouble figuring out the wget
+  command and I didn't fully understand curl.
 
 - And then, figuring out the logic of how to decide which HTTP cache server to
   send the request to. I decided to use the geoip2 library to get the location
